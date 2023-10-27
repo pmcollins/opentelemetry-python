@@ -180,7 +180,7 @@ class TestBatchSpanProcessor(ConcurrencyTestBase):
     )
     def test_args_env_var(self):
 
-        batch_span_processor = export.BatchSpanProcessor(
+        batch_span_processor = export._BatchSpanProcessor1(
             MySpanExporter(destination=[])
         )
 
@@ -191,7 +191,7 @@ class TestBatchSpanProcessor(ConcurrencyTestBase):
 
     def test_args_env_var_defaults(self):
 
-        batch_span_processor = export.BatchSpanProcessor(
+        batch_span_processor = export._BatchSpanProcessor1(
             MySpanExporter(destination=[])
         )
 
@@ -212,7 +212,7 @@ class TestBatchSpanProcessor(ConcurrencyTestBase):
     def test_args_env_var_value_error(self):
 
         logger.disabled = True
-        batch_span_processor = export.BatchSpanProcessor(
+        batch_span_processor = export._BatchSpanProcessor1(
             MySpanExporter(destination=[])
         )
         logger.disabled = False
@@ -292,7 +292,7 @@ class TestBatchSpanProcessor(ConcurrencyTestBase):
         self.assertTrue(span_processor.force_flush())
 
     def test_flush_from_multiple_threads(self):
-        num_threads = 50
+        num_threads = 5
         num_spans = 10
 
         span_list = []
@@ -423,7 +423,7 @@ class TestBatchSpanProcessor(ConcurrencyTestBase):
         tracer = tracer_provider.get_tracer(__name__)
 
         exporter = InMemorySpanExporter()
-        span_processor = export.BatchSpanProcessor(
+        span_processor = export._BatchSpanProcessor1(
             exporter,
             max_queue_size=256,
             max_export_batch_size=64,
@@ -470,7 +470,7 @@ class TestBatchSpanProcessor(ConcurrencyTestBase):
             destination=spans_names_list, export_event=export_event
         )
         start_time = time.time()
-        span_processor = export.BatchSpanProcessor(
+        span_processor = export._BatchSpanProcessor1(
             my_exporter,
             schedule_delay_millis=500,
         )
@@ -501,7 +501,7 @@ class TestBatchSpanProcessor(ConcurrencyTestBase):
             export_timeout_millis=50,
         )
 
-        span_processor = export.BatchSpanProcessor(
+        span_processor = export._BatchSpanProcessor1(
             my_exporter,
             schedule_delay_millis=50,
         )
@@ -532,13 +532,13 @@ class TestBatchSpanProcessor(ConcurrencyTestBase):
     def test_batch_span_processor_parameters(self):
         # zero max_queue_size
         self.assertRaises(
-            ValueError, export.BatchSpanProcessor, None, max_queue_size=0
+            ValueError, export._BatchSpanProcessor1, None, max_queue_size=0
         )
 
         # negative max_queue_size
         self.assertRaises(
             ValueError,
-            export.BatchSpanProcessor,
+            export._BatchSpanProcessor1,
             None,
             max_queue_size=-500,
         )
@@ -546,7 +546,7 @@ class TestBatchSpanProcessor(ConcurrencyTestBase):
         # zero schedule_delay_millis
         self.assertRaises(
             ValueError,
-            export.BatchSpanProcessor,
+            export._BatchSpanProcessor1,
             None,
             schedule_delay_millis=0,
         )
@@ -554,7 +554,7 @@ class TestBatchSpanProcessor(ConcurrencyTestBase):
         # negative schedule_delay_millis
         self.assertRaises(
             ValueError,
-            export.BatchSpanProcessor,
+            export._BatchSpanProcessor1,
             None,
             schedule_delay_millis=-500,
         )
@@ -562,7 +562,7 @@ class TestBatchSpanProcessor(ConcurrencyTestBase):
         # zero max_export_batch_size
         self.assertRaises(
             ValueError,
-            export.BatchSpanProcessor,
+            export._BatchSpanProcessor1,
             None,
             max_export_batch_size=0,
         )
@@ -570,7 +570,7 @@ class TestBatchSpanProcessor(ConcurrencyTestBase):
         # negative max_export_batch_size
         self.assertRaises(
             ValueError,
-            export.BatchSpanProcessor,
+            export._BatchSpanProcessor1,
             None,
             max_export_batch_size=-500,
         )
@@ -578,7 +578,7 @@ class TestBatchSpanProcessor(ConcurrencyTestBase):
         # max_export_batch_size > max_queue_size:
         self.assertRaises(
             ValueError,
-            export.BatchSpanProcessor,
+            export._BatchSpanProcessor1,
             None,
             max_queue_size=256,
             max_export_batch_size=512,

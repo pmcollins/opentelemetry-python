@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+import abc
 import collections
 import logging
 import os
@@ -137,7 +137,70 @@ class _FlushRequest:
 _BSP_RESET_ONCE = Once()
 
 
+class MaturityLevel(Enum):
+    UNSPECIFIED = 0
+    LEGACY = 1
+    STABLE = 2
+    BETA = 3
+
+    @staticmethod
+    def from_string(v):
+        if str in MaturityLevel.__members__:
+            return MaturityLevel[v]
+        return MaturityLevel.UNSPECIFIED
+
+def _resolve_maturity_level(maturity_level_override: MaturityLevel) -> MaturityLevel:
+    if maturity_level_override is not None:
+        return maturity_level_override
+    env = os.environ.get('OTEL_PYTHON_MATURITY_LEVEL', '').upper()
+    return MaturityLevel.from_string(env)
+
 class BatchSpanProcessor(SpanProcessor):
+
+    def __init__(
+        self,
+        span_exporter: SpanExporter,
+        max_queue_size: int = None,
+        schedule_delay_millis: float = None,
+        max_export_batch_size: int = None,
+        export_timeout_millis: float = None,
+        maturity_level: MaturityLevel = None,
+    ):
+        if _resolve_maturity_level(maturity_level) == MaturityLevel.BETA:
+            self.delegate = _BatchSpanProcessor2(
+                span_exporter,
+                max_queue_size,
+                schedule_delay_millis,
+                max_export_batch_size,
+                export_timeout_millis
+            )
+        else:
+            self.delegate = _BatchSpanProcessor1(
+                span_exporter,
+                max_queue_size,
+                schedule_delay_millis,
+                max_export_batch_size,
+                export_timeout_millis
+            )
+
+    def on_start(
+        self,
+        span: "Span",
+        parent_context: Optional[Context] = None,
+    ) -> None:
+        self.delegate.on_start(span, parent_context)
+
+    def on_end(self, span: "ReadableSpan") -> None:
+        self.delegate.on_end(span)
+
+    def shutdown(self) -> None:
+        self.delegate.shutdown()
+
+    def force_flush(self, timeout_millis: int = 30000) -> bool:
+        return self.delegate.force_flush(timeout_millis)
+
+
+class _BatchSpanProcessor1(SpanProcessor):
     """Batch span processor implementation.
 
     `BatchSpanProcessor` is an implementation of `SpanProcessor` that
@@ -161,31 +224,31 @@ class BatchSpanProcessor(SpanProcessor):
         export_timeout_millis: float = None,
     ):
         if max_queue_size is None:
-            max_queue_size = BatchSpanProcessor._default_max_queue_size()
+            max_queue_size = _BatchSpanProcessor1._default_max_queue_size()
 
         if schedule_delay_millis is None:
             schedule_delay_millis = (
-                BatchSpanProcessor._default_schedule_delay_millis()
+                _BatchSpanProcessor1._default_schedule_delay_millis()
             )
 
         if max_export_batch_size is None:
             max_export_batch_size = (
-                BatchSpanProcessor._default_max_export_batch_size()
+                _BatchSpanProcessor1._default_max_export_batch_size()
             )
 
         if export_timeout_millis is None:
             export_timeout_millis = (
-                BatchSpanProcessor._default_export_timeout_millis()
+                _BatchSpanProcessor1._default_export_timeout_millis()
             )
 
-        BatchSpanProcessor._validate_arguments(
+        _BatchSpanProcessor1._validate_arguments(
             max_queue_size, schedule_delay_millis, max_export_batch_size
         )
 
         self.span_exporter = span_exporter
         self.queue = collections.deque(
             [], max_queue_size
-        )  # type: typing.Deque[Span]
+        )  # type: typing.Deque[ReadableSpan]
         self.worker_thread = threading.Thread(
             name="OtelBatchSpanProcessor", target=self.worker, daemon=True
         )
@@ -200,8 +263,8 @@ class BatchSpanProcessor(SpanProcessor):
         self._spans_dropped = False
         # precallocated list to send spans to exporter
         self.spans_list = [
-            None
-        ] * self.max_export_batch_size  # type: typing.List[typing.Optional[Span]]
+                              None
+                          ] * self.max_export_batch_size  # type: typing.List[typing.Optional[Span]]
         self.worker_thread.start()
         # Only available in *nix since py37.
         if hasattr(os, "register_at_fork"):
@@ -511,7 +574,7 @@ class ConsoleSpanExporter(SpanExporter):
         formatter: typing.Callable[
             [ReadableSpan], str
         ] = lambda span: span.to_json()
-        + linesep,
+                         + linesep,
     ):
         self.out = out
         self.formatter = formatter
@@ -525,3 +588,208 @@ class ConsoleSpanExporter(SpanExporter):
 
     def force_flush(self, timeout_millis: int = 30000) -> bool:
         return True
+
+
+class TimerABC(abc.ABC):
+    """
+    An interface extracted from PeriodicTimer so alternative implementations can be used for testing.
+    """
+
+    @abc.abstractmethod
+    def set_callback(self, cb) -> None:
+        pass
+
+    @abc.abstractmethod
+    def start(self) -> None:
+        pass
+
+    @abc.abstractmethod
+    def poke(self) -> None:
+        pass
+
+    @abc.abstractmethod
+    def stop(self) -> None:
+        pass
+
+
+class ThreadingTimer(TimerABC):
+
+    def __init__(self, interval_sec: float):
+        self.interval_sec = interval_sec
+        self.cb = lambda: None
+        self.timer = None
+        self.lock = threading.Lock()
+
+    def set_callback(self, cb) -> None:
+        with self.lock:
+            self.cb = cb
+
+    def start(self) -> None:
+        with self.lock:
+            self.timer = threading.Timer(self.interval_sec, self._work)
+            self.timer.daemon = True
+            self.timer.start()
+
+    def _work(self):
+        self.cb()
+        self.start()
+
+    def poke(self) -> None:
+        with self.lock:
+            self._do_stop()
+            threading.Thread(target=self._work, daemon=True).start()
+
+    def stop(self) -> None:
+        with self.lock:
+            self._do_stop()
+
+    def _do_stop(self):
+        if self.timer is None:
+            return
+        self.timer.cancel()
+        self.timer = None
+
+
+class ThreadlessTimer(TimerABC):
+    """
+    For testing. Executes the callback synchronously when you run poke().
+    """
+
+    def __init__(self):
+        self._cb = lambda: None
+
+    def set_callback(self, cb):
+        self._cb = cb
+
+    def start(self):
+        pass
+
+    def poke(self):
+        self._cb()
+
+    def stop(self):
+        pass
+
+    def started(self) -> None:
+        pass
+
+    def stopped(self) -> None:
+        pass
+
+
+class SpanAccumulator:
+    """
+    A thread-safe container designed to collect and batch spans. It accumulates spans until a specified batch size is
+    reached, at which point the accumulated spans are moved into a FIFO queue. Provides methods to add spans, check if
+    the accumulator is non-empty, and retrieve the earliest batch of spans from the queue.
+    """
+
+    def __init__(self, batch_size: int):
+        self._batch_size = batch_size
+        self._spans: typing.List[ReadableSpan] = []
+        self._batches = collections.deque()  # fixme set max size
+        self._lock = threading.Lock()
+
+    def nonempty(self) -> bool:
+        """
+        Checks if the accumulator contains any spans or batches. It returns True if either the span list or the batch
+        queue is non-empty, and False otherwise.
+        """
+        with self._lock:
+            return len(self._spans) > 0 or len(self._batches) > 0
+
+    def push(self, span: ReadableSpan) -> bool:
+        """
+        Adds a span to the accumulator. If the addition causes the number of spans to reach the
+        specified batch size, the accumulated spans are moved into a FIFO queue as a new batch. Returns True if a new
+        batch was created, otherwise returns False.
+        """
+        with self._lock:
+            self._spans.append(span)
+            if len(self._spans) < self._batch_size:
+                return False
+            self._batches.appendleft(self._spans)
+            self._spans = []
+            return True
+
+    def batch(self) -> typing.List[ReadableSpan]:
+        """
+        Returns the earliest (first in line) batch of spans from the FIFO queue. If the queue is empty, returns any
+        remaining spans that haven't been batched.
+        """
+        try:
+            return self._batches.pop()
+        except IndexError:
+            # if there are no batches left, return the current spans
+            with self._lock:
+                out = self._spans
+                self._spans = []
+                return out
+
+
+class _BatchSpanProcessor2(SpanProcessor):
+    """
+    A SpanProcessor that sends spans in batches on an interval or when a maximum number of spans has been reached,
+    whichever comes first.
+    """
+
+    def __init__(
+        self,
+        span_exporter: SpanExporter,
+        max_queue_size: int = None,
+        schedule_delay_millis: float = None,
+        max_export_batch_size: int = None,
+        export_timeout_millis: float = None,
+        timer: typing.Optional[TimerABC] = None,
+    ):
+        self._exporter = span_exporter
+
+        max_export_batch_size_final = _BatchSpanProcessor1._default_max_export_batch_size(
+        ) if max_export_batch_size is None else max_export_batch_size
+        self._accumulator = SpanAccumulator(max_export_batch_size_final)
+
+        schedule_delay_millis_final = _BatchSpanProcessor1._default_schedule_delay_millis(
+        ) if schedule_delay_millis is None else schedule_delay_millis
+        self._timer = timer or ThreadingTimer(schedule_delay_millis_final / 1e3)
+
+        self._timer.set_callback(self._work)
+        self._timer.start()
+
+    def on_start(self, span: Span, parent_context: typing.Optional[Context] = None) -> None:
+        pass
+
+    def on_end(self, span: ReadableSpan) -> None:
+        """
+        This method must be extremely fast. It adds the span to the accumulator for later sending and pokes the timer
+        if the number of spans waiting to be sent has reached the maximum batch size.
+        """
+        full = self._accumulator.push(span)
+        if full:
+            self._timer.poke()
+
+    def force_flush(self, timeout_millis: int = 30000) -> bool:
+        """
+        Stops the timer, exports any spans in the accumulator then restarts the timer.
+        """
+        self._timer.stop()
+        self._exporter.force_flush(timeout_millis)  # this may be a no-op depending on the impl
+        while self._accumulator.nonempty():
+            result = self._work()
+            if result != SpanExportResult.SUCCESS:
+                return False
+        self._timer.start()
+
+    def shutdown(self) -> None:
+        self._timer.stop()
+        while self._accumulator.nonempty():
+            self._work()
+        self._exporter.shutdown()
+
+    def _work(self) -> SpanExportResult:
+        """
+        This is used by the timer as its callback and by force_flush.
+        """
+        batch = self._accumulator.batch()
+        if len(batch) > 0:
+            return self._exporter.export(batch)
+        return SpanExportResult.SUCCESS
