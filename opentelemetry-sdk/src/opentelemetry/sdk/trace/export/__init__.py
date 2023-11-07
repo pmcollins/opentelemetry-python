@@ -17,7 +17,10 @@ import logging
 import os
 import sys
 import threading
+import time
 import typing
+from concurrent import futures
+from concurrent.futures import ThreadPoolExecutor
 from enum import Enum
 from os import environ, linesep
 from time import time_ns
@@ -149,11 +152,13 @@ class MaturityLevel(Enum):
             return MaturityLevel[v]
         return MaturityLevel.UNSPECIFIED
 
+
 def _resolve_maturity_level(maturity_level_override: MaturityLevel) -> MaturityLevel:
     if maturity_level_override is not None:
         return maturity_level_override
     env = os.environ.get('OTEL_PYTHON_MATURITY_LEVEL', '').upper()
     return MaturityLevel.from_string(env)
+
 
 class BatchSpanProcessor(SpanProcessor):
 
@@ -636,14 +641,14 @@ class ThreadingTimer(TimerABC):
 
     def poke(self) -> None:
         with self.lock:
-            self._do_stop()
+            self._stop_unsafe()
             threading.Thread(target=self._work, daemon=True).start()
 
     def stop(self) -> None:
         with self.lock:
-            self._do_stop()
+            self._stop_unsafe()
 
-    def _do_stop(self):
+    def _stop_unsafe(self):
         if self.timer is None:
             return
         self.timer.cancel()
@@ -714,8 +719,8 @@ class SpanAccumulator:
 
     def batch(self) -> typing.List[ReadableSpan]:
         """
-        Returns the earliest (first in line) batch of spans from the FIFO queue. If the queue is empty, returns any
-        remaining spans that haven't been batched.
+        Returns the earliest (rightmost, first in line) batch of spans from the FIFO queue. If the queue is empty,
+        returns any remaining spans that haven't been batched.
         """
         try:
             return self._batches.pop()
@@ -725,6 +730,13 @@ class SpanAccumulator:
                 out = self._spans
                 self._spans = []
                 return out
+
+    def reinsert(self, batch):
+        """
+        Returns a batch back into the queue at the front of the line.
+        """
+        with self._lock:
+            self._batches.append(batch)
 
 
 class _BatchSpanProcessor2(SpanProcessor):
@@ -744,15 +756,17 @@ class _BatchSpanProcessor2(SpanProcessor):
     ):
         self._exporter = span_exporter
 
-        max_export_batch_size_final = _BatchSpanProcessor1._default_max_export_batch_size(
-        ) if max_export_batch_size is None else max_export_batch_size
+        max_export_batch_size_final = _BatchSpanProcessor1._default_max_export_batch_size() \
+            if max_export_batch_size is None \
+            else max_export_batch_size
         self._accumulator = SpanAccumulator(max_export_batch_size_final)
 
-        schedule_delay_millis_final = _BatchSpanProcessor1._default_schedule_delay_millis(
-        ) if schedule_delay_millis is None else schedule_delay_millis
-        self._timer = timer or ThreadingTimer(schedule_delay_millis_final / 1e3)
+        max_interval = _BatchSpanProcessor1._default_schedule_delay_millis() \
+            if schedule_delay_millis is None \
+            else schedule_delay_millis
+        self._timer = timer or ThreadingTimer(max_interval / 1e3)
 
-        self._timer.set_callback(self._work)
+        self._timer.set_callback(self._export_single_batch)
         self._timer.start()
 
     def on_start(self, span: Span, parent_context: typing.Optional[Context] = None) -> None:
@@ -772,24 +786,50 @@ class _BatchSpanProcessor2(SpanProcessor):
         Stops the timer, exports any spans in the accumulator then restarts the timer.
         """
         self._timer.stop()
-        self._exporter.force_flush(timeout_millis)  # this may be a no-op depending on the impl
+        out = self._flush(timeout_millis)
+        self._timer.start()
+        return out
+
+    def _flush(self, timeout_millis):
+        self._exporter.force_flush(timeout_millis)  # typically a no-op
+        time_remaining_millis = timeout_millis
+        start = time.time()
         while self._accumulator.nonempty():
-            result = self._work()
+            result = self._export_single_batch_with_timeout(time_remaining_millis)
             if result != SpanExportResult.SUCCESS:
                 return False
-        self._timer.start()
+            elapsed_millis = (time.time() - start) * 1e3
+            if elapsed_millis > timeout_millis:
+                logger.warning('Timed out during force_flush.')
+                return False
+            time_remaining_millis -= elapsed_millis
+        return True
 
     def shutdown(self) -> None:
         self._timer.stop()
         while self._accumulator.nonempty():
-            self._work()
+            self._export_single_batch()
         self._exporter.shutdown()
 
-    def _work(self) -> SpanExportResult:
+    def _export_single_batch_with_timeout(self, timeout_millis):
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(self._export_single_batch)
+            try:
+                return future.result(timeout=(timeout_millis / 1e3))
+            except futures.TimeoutError:
+                logger.warning('Exporting single batch timed out.')
+                return SpanExportResult.FAILURE
+
+    def _export_single_batch(self) -> SpanExportResult:
         """
-        This is used by the timer as its callback and by force_flush.
+        Exports one batch. Any retry is handled by the exporter. If export fails, reinserts the batch into the
+        accumulator. Used by both the timer and force_flush.
         """
         batch = self._accumulator.batch()
-        if len(batch) > 0:
-            return self._exporter.export(batch)
-        return SpanExportResult.SUCCESS
+        if len(batch) == 0:
+            return SpanExportResult.SUCCESS
+
+        export_result = self._exporter.export(batch)
+        if export_result != SpanExportResult.SUCCESS:
+            self._accumulator.reinsert(batch)
+        return export_result
