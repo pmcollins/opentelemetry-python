@@ -423,14 +423,16 @@ _KNOWN_SAMPLERS = {
     "parentbased_traceidratio": ParentBasedTraceIdRatio,
 }
 
+DEFAULT_SAMPLER_NAME = "always_on"
+
 
 def _get_from_env_or_default() -> Sampler:
     trace_sampler = os.getenv(
-        OTEL_TRACES_SAMPLER, "parentbased_always_on"
+        OTEL_TRACES_SAMPLER, DEFAULT_SAMPLER_NAME
     ).lower()
     if trace_sampler not in _KNOWN_SAMPLERS:
         _logger.warning("Couldn't recognize sampler %s.", trace_sampler)
-        trace_sampler = "parentbased_always_on"
+        trace_sampler = DEFAULT_SAMPLER_NAME
 
     if trace_sampler in ("traceidratio", "parentbased_traceidratio"):
         try:

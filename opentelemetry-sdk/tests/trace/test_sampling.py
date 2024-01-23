@@ -20,6 +20,7 @@ import unittest
 from opentelemetry import context as context_api
 from opentelemetry import trace
 from opentelemetry.sdk.trace import sampling
+from opentelemetry.sdk.trace.sampling import _get_from_env_or_default
 
 TO_DEFAULT = trace.TraceFlags(trace.TraceFlags.DEFAULT)
 TO_SAMPLED = trace.TraceFlags(trace.TraceFlags.SAMPLED)
@@ -537,3 +538,7 @@ class TestSampler(unittest.TestCase):
             context_api.detach(token)
 
         self.exec_parent_based(implicit_parent_context)
+
+    def test_get_default_sampler(self):
+        sampler = _get_from_env_or_default()
+        self.assertEqual("AlwaysOnSampler", sampler.get_description())
