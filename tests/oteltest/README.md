@@ -86,10 +86,10 @@ class MyTest(OtelTest):
 
 #### Usage with OTel Examples
 
-Runnable examples are a great way for new users to get up to speed, but it would be nice to give them an opportunity
-to see the telemetry they just generated. Adding an `OtelTest` implementation (e.g. `MyTest` above) to existing
-example scripts lets users run examples without having to set up Python environments with dependencies. It also lets
-them potentially see the output of their instrumented script.
+Runnable examples are a great way to get up to speed on OpenTelemetry but running them can be tedious.
+oteltest lets you run example scripts and potentially see the telemetry you just generated without starting Docker or
+setting up Python enviornments. Adding an `OtelTest` implementation (e.g. `MyTest` above) to an existing example script
+lets you run it without having to set up a Python environment with dependencies.
 
 ### otelsink
 
@@ -97,7 +97,7 @@ them potentially see the output of their instrumented script.
 
 #### Operation
 
-You can run it either from the command line by using the `otelsink` command (installed when you
+You can run otelink either from the command line by using the `otelsink` command (installed when you
 `pip install oteltest`), or programatically.
 
 Either way, `otelsink` runs a gRPC server listening on 0.0.0.0:4317.
