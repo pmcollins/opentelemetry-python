@@ -43,12 +43,16 @@ import argparse
 def main():
     parser = argparse.ArgumentParser(description="OpenTelemetry Python Tester")
 
-    w_help = "Path to a wheel (.whl) file to be used instead of `pip install oteltest`"
+    w_help = (
+        "Path to a wheel (.whl) file to `pip install` instead of `oteltest`"
+    )
     parser.add_argument(
         "-w", "--wheel-file", type=str, required=False, help=w_help
     )
 
-    d_help = "A directory to hold per-script venv directories"
+    d_help = (
+        "An optional override directory to hold per-script venv directories."
+    )
     parser.add_argument(
         "-d", "--venv-parent-dir", type=str, required=False, help=d_help
     )
@@ -56,7 +60,7 @@ def main():
     parser.add_argument(
         "script_dir",
         type=str,
-        help="The directory containing your oteltest scripts",
+        help="The directory containing your oteltest scripts at the top level",
     )
 
     args = parser.parse_args()
