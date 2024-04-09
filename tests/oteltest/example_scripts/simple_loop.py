@@ -39,5 +39,10 @@ class MyTest(OtelTest):
     def wrapper_script(self) -> str:
         return "opentelemetry-instrument"
 
+    def run_client(self) -> None:
+        for j in range(10):
+            time.sleep(1)
+            print(f"i: {j}")
+
     def validate(self, telemetry: Telemetry) -> None:
         assert telemetry.num_spans() == NUM_ADDS

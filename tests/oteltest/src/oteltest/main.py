@@ -43,9 +43,7 @@ import argparse
 def main():
     parser = argparse.ArgumentParser(description="OpenTelemetry Python Tester")
 
-    w_help = (
-        "Path to a wheel (.whl) file to `pip install` instead of `oteltest`"
-    )
+    w_help = "Path to an optional wheel (.whl) file to `pip install` instead of `oteltest`"
     parser.add_argument(
         "-w", "--wheel-file", type=str, required=False, help=w_help
     )
@@ -117,15 +115,28 @@ def setup_script_environment(script, script_dir, tempdir, wheel_file):
     print(f"- {script} PASSED")
 
 
-def run_python_script(script, script_dir, test_instance, v):
+def run_python_script(script, script_dir, test_instance: OtelTest, v):
     python_script_cmd = [
         v.path_to_executable("python"),
         str(Path(script_dir) / script),
     ]
-    ws = test_instance.wrapper_script()
-    if ws is not None:
-        python_script_cmd.insert(0, v.path_to_executable(ws))
-    run_subprocess(python_script_cmd, test_instance.environment_variables())
+    script = test_instance.wrapper_script()
+    if script is not None:
+        python_script_cmd.insert(0, v.path_to_executable(script))
+
+    process = subprocess.Popen(
+        python_script_cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=test_instance.environment_variables(),
+    )
+
+    test_instance.run_client()
+
+    # wait for the process to terminate
+    stdout, stderr = process.communicate()
+
+    print_result(process.returncode, stderr, stdout)
 
 
 def run_subprocess(args, env_vars=None):
@@ -136,14 +147,25 @@ def run_subprocess(args, env_vars=None):
         capture_output=True,
         env=env_vars,
     )
-    print(f"- Return Code: {result.returncode}")
+    returncode = result.returncode
+    stdout = result.stdout
+    stderr = result.stderr
+    print_result(returncode, stderr, stdout)
+
+
+def print_result(returncode, stderr, stdout):
+    print(f"- Return Code: {returncode}")
     print("- Standard Output:")
-    if result.stdout:
-        print(result.stdout.decode("utf-8").strip())
+    if stdout:
+        print(decode(stdout))
     print("- Standard Error:")
-    if result.stderr:
-        print(result.stderr.decode("utf-8").strip())
+    if stderr:
+        print(decode(stderr))
     print("- End Subprocess -\n")
+
+
+def decode(stream):
+    return stream.decode("utf-8").strip()
 
 
 def load_test_class_for_script(module_name):

@@ -128,5 +128,9 @@ class OtelTest(abc.ABC):
         pass
 
     @abc.abstractmethod
+    def run_client(self) -> None:
+        pass
+
+    @abc.abstractmethod
     def validate(self, telemetry: Telemetry) -> None:
         pass
