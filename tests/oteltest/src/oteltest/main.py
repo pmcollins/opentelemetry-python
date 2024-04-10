@@ -72,7 +72,7 @@ def run(script_dir: str, wheel_file: str, venv_parent_dir: str):
     sys.path.append(script_dir)
 
     for script in ls_scripts(script_dir):
-        setup_script_environment(script, script_dir, venv_dir, wheel_file)
+        setup_script_environment(script_dir, venv_dir, wheel_file, script)
 
 
 def ls_scripts(script_dir):
@@ -83,7 +83,7 @@ def ls_scripts(script_dir):
     return scripts
 
 
-def setup_script_environment(script, script_dir, tempdir, wheel_file):
+def setup_script_environment(script_dir, tempdir, wheel_file, script):
     handler = AccumulatingHandler()
     sink = GrpcSink(handler)
     sink.start()
@@ -108,11 +108,16 @@ def setup_script_environment(script, script_dir, tempdir, wheel_file):
 
     v.rm()
 
-    with open(str(Path(script_dir) / f"{module_name}.json"), "w") as file:
-        file.write(handler.telemetry_to_json())
+    save_telemetry_json(script_dir, module_name, handler.telemetry_to_json())
 
     oteltest_instance.validate(handler.telemetry)
     print(f"- {script} PASSED")
+
+
+def save_telemetry_json(script_dir, module_name, json_str):
+    path_str = str(Path(script_dir) / f"{module_name}.json")
+    with open(path_str, "w") as file:
+        file.write(json_str)
 
 
 def run_python_script(script, script_dir, oteltest_instance: OtelTest, v):
@@ -150,13 +155,11 @@ def run_python_script(script, script_dir, oteltest_instance: OtelTest, v):
         print_result(process.returncode, ex.stderr, ex.stdout)
 
 
-def run_subprocess(args, env_vars=None):
+def run_subprocess(args):
     print(f"- Subprocess: {args}")
-    print(f"- Environment: {env_vars}")
     result = subprocess.run(
         args,
         capture_output=True,
-        env=env_vars,
     )
     returncode = result.returncode
     stdout = result.stdout
