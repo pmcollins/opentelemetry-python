@@ -140,7 +140,7 @@ def run_python_script(script, script_dir, oteltest_instance: OtelTest, v):
             f"- Will wait indefinitely for {script} to finish (max_wait is None)"
         )
     else:
-        print(f"- Will wait up to {timeout} seconds for {script} to finish")
+        print(f"- Will wait for up to {timeout} seconds for {script} to finish")
 
     try:
         stdout, stderr = process.communicate(timeout=timeout)
