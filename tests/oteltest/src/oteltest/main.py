@@ -90,7 +90,7 @@ def setup_script_environment(script, script_dir, tempdir, wheel_file):
 
     module_name = script[:-3]
     test_class = load_test_class_for_script(module_name)
-    test_instance: OtelTest = test_class()
+    oteltest_instance: OtelTest = test_class()
 
     v = Venv(str(Path(tempdir) / module_name))
     v.create()
@@ -100,27 +100,27 @@ def setup_script_environment(script, script_dir, tempdir, wheel_file):
     oteltest_dep = wheel_file or "oteltest"
     run_subprocess([pip_path, "install", oteltest_dep])
 
-    for req in test_instance.requirements():
+    for req in oteltest_instance.requirements():
         print(f"- Will install requirement: '{req}'")
         run_subprocess([pip_path, "install", req])
 
-    run_python_script(script, script_dir, test_instance, v)
+    run_python_script(script, script_dir, oteltest_instance, v)
 
     v.rm()
 
     with open(str(Path(script_dir) / f"{module_name}.json"), "w") as file:
         file.write(handler.telemetry_to_json())
 
-    test_instance.validate(handler.telemetry)
+    oteltest_instance.validate(handler.telemetry)
     print(f"- {script} PASSED")
 
 
-def run_python_script(script, script_dir, test_instance: OtelTest, v):
+def run_python_script(script, script_dir, oteltest_instance: OtelTest, v):
     python_script_cmd = [
         v.path_to_executable("python"),
         str(Path(script_dir) / script),
     ]
-    script = test_instance.wrapper_script()
+    script = oteltest_instance.wrapper_script()
     if script is not None:
         python_script_cmd.insert(0, v.path_to_executable(script))
 
@@ -128,13 +128,18 @@ def run_python_script(script, script_dir, test_instance: OtelTest, v):
         python_script_cmd,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        env=test_instance.environment_variables(),
+        env=oteltest_instance.environment_variables(),
     )
 
-    test_instance.run_client()
+    oteltest_instance.run_client()
 
     # wait for the process to terminate
-    stdout, stderr = process.communicate()
+    timeout = oteltest_instance.max_wait()
+    if timeout is None:
+        print("- Will wait indefinitely for script to finish (max_wait() returned None)")
+    else:
+        print(f"- Will wait up to {timeout} seconds for script to finish")
+    stdout, stderr = process.communicate(timeout=timeout)
 
     print_result(process.returncode, stderr, stdout)
 

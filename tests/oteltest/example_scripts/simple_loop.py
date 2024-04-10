@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import time
-from typing import Mapping, Sequence
+from typing import Mapping, Optional, Sequence
 
 from opentelemetry import trace
 from oteltest.common import OtelTest, Telemetry
@@ -25,7 +25,7 @@ if __name__ == "__main__":
     tracer = trace.get_tracer("my-tracer")
     for i in range(NUM_ADDS):
         with tracer.start_as_current_span("my-span"):
-            print(f"{i+1}/{NUM_ADDS}")
+            print(f"simple_loop.py: {i+1}/{NUM_ADDS}")
             time.sleep(0.5)
 
 
@@ -40,9 +40,10 @@ class MyTest(OtelTest):
         return "opentelemetry-instrument"
 
     def run_client(self) -> None:
-        for j in range(10):
-            time.sleep(1)
-            print(f"i: {j}")
+        print("run_client()")
+
+    def max_wait(self) -> Optional[float]:
+        return 60
 
     def validate(self, telemetry: Telemetry) -> None:
         assert telemetry.num_spans() == NUM_ADDS

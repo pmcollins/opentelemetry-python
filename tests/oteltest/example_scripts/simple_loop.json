@@ -23,7 +23,7 @@
                 {
                   "key": "telemetry.sdk.version",
                   "value": {
-                    "stringValue": "1.23.0"
+                    "stringValue": "1.24.0"
                   }
                 },
                 {
@@ -35,7 +35,7 @@
                 {
                   "key": "telemetry.auto.version",
                   "value": {
-                    "stringValue": "0.44b0"
+                    "stringValue": "0.45b0"
                   }
                 }
               ]
@@ -47,84 +47,84 @@
                 },
                 "spans": [
                   {
-                    "traceId": "et4vTTA8/bm5YyjFrF/T7w==",
-                    "spanId": "zsOz4GIerwc=",
+                    "traceId": "wKn+9uYSu732Bvp/d6soig==",
+                    "spanId": "GFQ0Y/1usHw=",
                     "name": "my-span",
                     "kind": "SPAN_KIND_INTERNAL",
-                    "startTimeUnixNano": "1711635618595538000",
-                    "endTimeUnixNano": "1711635619098602000",
+                    "startTimeUnixNano": "1712759490850426000",
+                    "endTimeUnixNano": "1712759491354281000",
                     "status": {}
                   },
                   {
-                    "traceId": "oQrQAFMZiCEMprV4/LNrwQ==",
-                    "spanId": "iMUV/jNqC5w=",
+                    "traceId": "TlfIBrx/au+g7z9/g8c6JA==",
+                    "spanId": "9g/OJxA/XS4=",
                     "name": "my-span",
                     "kind": "SPAN_KIND_INTERNAL",
-                    "startTimeUnixNano": "1711635619098867000",
-                    "endTimeUnixNano": "1711635619603935000",
+                    "startTimeUnixNano": "1712759491354586000",
+                    "endTimeUnixNano": "1712759491857068000",
                     "status": {}
                   },
                   {
-                    "traceId": "GaHP1buKnyub7z0lFPtltg==",
-                    "spanId": "UTXTLUVZhoU=",
+                    "traceId": "h+YaJ65EcB6Kf9qD1XLpYA==",
+                    "spanId": "dkWwAUyNjO8=",
                     "name": "my-span",
                     "kind": "SPAN_KIND_INTERNAL",
-                    "startTimeUnixNano": "1711635619604104000",
-                    "endTimeUnixNano": "1711635620105109000",
+                    "startTimeUnixNano": "1712759491857207000",
+                    "endTimeUnixNano": "1712759492359400000",
                     "status": {}
                   },
                   {
-                    "traceId": "oqJOz/B6nzvpq8L3EfcSUQ==",
-                    "spanId": "WYJ0Kpi5F+Q=",
+                    "traceId": "x73Excz4sdxygBM+ID69+w==",
+                    "spanId": "4tqPOx4B+Eo=",
                     "name": "my-span",
                     "kind": "SPAN_KIND_INTERNAL",
-                    "startTimeUnixNano": "1711635620105286000",
-                    "endTimeUnixNano": "1711635620607148000",
+                    "startTimeUnixNano": "1712759492359552000",
+                    "endTimeUnixNano": "1712759492863414000",
                     "status": {}
                   },
                   {
-                    "traceId": "dh4hTfwNZhjGamgmvCTSyA==",
-                    "spanId": "VvA2+TOIPPQ=",
+                    "traceId": "kp7/+JXh/sDqCH6bsesshg==",
+                    "spanId": "R2a/Swb/XBY=",
                     "name": "my-span",
                     "kind": "SPAN_KIND_INTERNAL",
-                    "startTimeUnixNano": "1711635620607325000",
-                    "endTimeUnixNano": "1711635621112208000",
+                    "startTimeUnixNano": "1712759492863667000",
+                    "endTimeUnixNano": "1712759493368265000",
                     "status": {}
                   },
                   {
-                    "traceId": "4THaXRxEQE//Q6Ah9ibzMA==",
-                    "spanId": "9w1RAuVW8R8=",
+                    "traceId": "rla9nswFh1ONlj3ktaaQVg==",
+                    "spanId": "ei+dgcuqSRY=",
                     "name": "my-span",
                     "kind": "SPAN_KIND_INTERNAL",
-                    "startTimeUnixNano": "1711635621112384000",
-                    "endTimeUnixNano": "1711635621617394000",
+                    "startTimeUnixNano": "1712759493368418000",
+                    "endTimeUnixNano": "1712759493871011000",
                     "status": {}
                   },
                   {
-                    "traceId": "AobQXFEK52+9JtF7cRojrg==",
-                    "spanId": "4bxxVSJdgss=",
+                    "traceId": "aar/fPoP1SbWePlkuUAHlQ==",
+                    "spanId": "u1oBpdXkEsY=",
                     "name": "my-span",
                     "kind": "SPAN_KIND_INTERNAL",
-                    "startTimeUnixNano": "1711635621617543000",
-                    "endTimeUnixNano": "1711635622122152000",
+                    "startTimeUnixNano": "1712759493871273000",
+                    "endTimeUnixNano": "1712759494372957000",
                     "status": {}
                   },
                   {
-                    "traceId": "D1IloLl9gAQWEuHhbMEkjg==",
-                    "spanId": "qTbjatfaKxs=",
+                    "traceId": "lj5EHWo9ElfkBu/kSznVeg==",
+                    "spanId": "TnHUM/kRZt8=",
                     "name": "my-span",
                     "kind": "SPAN_KIND_INTERNAL",
-                    "startTimeUnixNano": "1711635622122414000",
-                    "endTimeUnixNano": "1711635622623191000",
+                    "startTimeUnixNano": "1712759494373152000",
+                    "endTimeUnixNano": "1712759494873477000",
                     "status": {}
                   },
                   {
-                    "traceId": "un5hDAa1mhAiI0cURE/nOw==",
-                    "spanId": "TyT3ZlMSJx0=",
+                    "traceId": "+vDpXIG67rjtv8lrS8SpEQ==",
+                    "spanId": "8e109dTowyk=",
                     "name": "my-span",
                     "kind": "SPAN_KIND_INTERNAL",
-                    "startTimeUnixNano": "1711635622623366000",
-                    "endTimeUnixNano": "1711635623126592000",
+                    "startTimeUnixNano": "1712759494873735000",
+                    "endTimeUnixNano": "1712759495373978000",
                     "status": {}
                   }
                 ]
@@ -158,7 +158,7 @@
                 {
                   "key": "telemetry.sdk.version",
                   "value": {
-                    "stringValue": "1.23.0"
+                    "stringValue": "1.24.0"
                   }
                 },
                 {
@@ -170,7 +170,7 @@
                 {
                   "key": "telemetry.auto.version",
                   "value": {
-                    "stringValue": "0.44b0"
+                    "stringValue": "0.45b0"
                   }
                 }
               ]
@@ -182,30 +182,30 @@
                 },
                 "spans": [
                   {
-                    "traceId": "nhjQZtiuQzR7c2gk+ibSCA==",
-                    "spanId": "Qs6Wd6WSyWs=",
+                    "traceId": "+p/vEXWXA3e9pOP6k6EdhQ==",
+                    "spanId": "ddV2pt1uCLE=",
                     "name": "my-span",
                     "kind": "SPAN_KIND_INTERNAL",
-                    "startTimeUnixNano": "1711635623126694000",
-                    "endTimeUnixNano": "1711635623626949000",
+                    "startTimeUnixNano": "1712759495374180000",
+                    "endTimeUnixNano": "1712759495877969000",
                     "status": {}
                   },
                   {
-                    "traceId": "cIYgFYTWwl+aRkNSHk8/Hw==",
-                    "spanId": "hCN25UIOSao=",
+                    "traceId": "TNr46zLbAWYZcwB5kmnJ8g==",
+                    "spanId": "IrKP3d5WENQ=",
                     "name": "my-span",
                     "kind": "SPAN_KIND_INTERNAL",
-                    "startTimeUnixNano": "1711635623627119000",
-                    "endTimeUnixNano": "1711635624131442000",
+                    "startTimeUnixNano": "1712759495878226000",
+                    "endTimeUnixNano": "1712759496381277000",
                     "status": {}
                   },
                   {
-                    "traceId": "bZtpEfpiSVdAVmDhuKOYaw==",
-                    "spanId": "A6gHTRBvC3Y=",
+                    "traceId": "3eEzf3zfr/vdfqRC9aaV7A==",
+                    "spanId": "fy0SEmyae3k=",
                     "name": "my-span",
                     "kind": "SPAN_KIND_INTERNAL",
-                    "startTimeUnixNano": "1711635624131546000",
-                    "endTimeUnixNano": "1711635624631675000",
+                    "startTimeUnixNano": "1712759496381403000",
+                    "endTimeUnixNano": "1712759496884624000",
                     "status": {}
                   }
                 ]

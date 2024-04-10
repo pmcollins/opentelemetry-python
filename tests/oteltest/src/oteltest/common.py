@@ -132,5 +132,9 @@ class OtelTest(abc.ABC):
         pass
 
     @abc.abstractmethod
+    def max_wait(self) -> Optional[float]:
+        return None
+
+    @abc.abstractmethod
     def validate(self, telemetry: Telemetry) -> None:
         pass
