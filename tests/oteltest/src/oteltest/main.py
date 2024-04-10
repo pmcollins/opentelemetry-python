@@ -146,7 +146,7 @@ def run_python_script(script, script_dir, oteltest_instance: OtelTest, v):
         stdout, stderr = process.communicate(timeout=timeout)
         print_result(process.returncode, stderr, stdout)
     except subprocess.TimeoutExpired as ex:
-        print(f"- Script '{script}' was force terminated")
+        print(f"- Script {script} was force quit")
         print_result(process.returncode, ex.stderr, ex.stdout)
 
 
