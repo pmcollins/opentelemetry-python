@@ -120,9 +120,10 @@ def run_python_script(script, script_dir, oteltest_instance: OtelTest, v):
         v.path_to_executable("python"),
         str(Path(script_dir) / script),
     ]
-    script = oteltest_instance.wrapper_script()
-    if script is not None:
-        python_script_cmd.insert(0, v.path_to_executable(script))
+
+    wrapper_script = oteltest_instance.wrapper_script()
+    if wrapper_script is not None:
+        python_script_cmd.insert(0, v.path_to_executable(wrapper_script))
 
     process = subprocess.Popen(
         python_script_cmd,
@@ -133,15 +134,20 @@ def run_python_script(script, script_dir, oteltest_instance: OtelTest, v):
 
     oteltest_instance.run_client()
 
-    # wait for the process to terminate
     timeout = oteltest_instance.max_wait()
     if timeout is None:
-        print("- Will wait indefinitely for script to finish (max_wait() returned None)")
+        print(
+            f"- Will wait indefinitely for {script} to finish (max_wait is None)"
+        )
     else:
-        print(f"- Will wait up to {timeout} seconds for script to finish")
-    stdout, stderr = process.communicate(timeout=timeout)
+        print(f"- Will wait up to {timeout} seconds for {script} to finish")
 
-    print_result(process.returncode, stderr, stdout)
+    try:
+        stdout, stderr = process.communicate(timeout=timeout)
+        print_result(process.returncode, stderr, stdout)
+    except subprocess.TimeoutExpired as ex:
+        print(f"- Script '{script}' was force terminated")
+        print_result(process.returncode, ex.stderr, ex.stdout)
 
 
 def run_subprocess(args, env_vars=None):
