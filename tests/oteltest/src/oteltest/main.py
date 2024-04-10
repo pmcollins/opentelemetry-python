@@ -58,7 +58,7 @@ def main():
     parser.add_argument(
         "script_dir",
         type=str,
-        help="The directory containing your oteltest scripts at the top level",
+        help="The directory containing oteltest scripts at its top level",
     )
 
     args = parser.parse_args()
