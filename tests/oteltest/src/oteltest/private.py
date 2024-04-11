@@ -96,10 +96,10 @@ def run_python_script(script, script_dir, oteltest_instance: OtelTest, v):
         env=oteltest_instance.environment_variables(),
     )
 
-    timeout = oteltest_instance.run_client()
+    timeout = oteltest_instance.on_script_start()
     if timeout is None:
         print(
-            f"- Will wait indefinitely for {script} to finish (max_wait is None)"
+            f"- Will wait indefinitely for {script} to finish (on_script_start() returned None)"
         )
     else:
         print(

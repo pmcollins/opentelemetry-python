@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import time
-from typing import Mapping, Optional, Sequence
 
 from opentelemetry import trace
 from oteltest import OtelTest, Telemetry
@@ -39,8 +38,7 @@ class MyTest(OtelTest):
     def wrapper_script(self):
         return "opentelemetry-instrument"
 
-    def run_client(self):
-        print("run_client()")
+    def on_script_start(self):
         return None
 
     def validate(self, telemetry: Telemetry):

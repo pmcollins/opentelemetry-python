@@ -129,7 +129,7 @@ class OtelTest(abc.ABC):
         pass
 
     @abc.abstractmethod
-    def run_client(self) -> Optional[float]:
+    def on_script_start(self) -> Optional[float]:
         pass
 
     @abc.abstractmethod
