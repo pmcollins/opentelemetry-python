@@ -16,7 +16,6 @@
 import abc
 import dataclasses
 import json
-from abc import ABC
 from typing import List, Mapping, Optional, Sequence
 
 
@@ -137,8 +136,3 @@ class OtelTest(abc.ABC):
     def validate(self, telemetry: Telemetry) -> None:
         pass
 
-
-class SimpleOtelTest(OtelTest, ABC):
-    def run_client(self) -> Optional[float]:
-        print("SimpleOtelTest#run_client() running (no-op)")
-        return None

@@ -30,20 +30,18 @@ if __name__ == "__main__":
 
 
 class MyTest(OtelTest):
-    def requirements(self) -> Sequence[str]:
+    def requirements(self):
         return "opentelemetry-distro", "opentelemetry-exporter-otlp-proto-grpc"
 
-    def environment_variables(self) -> Mapping[str, str]:
+    def environment_variables(self):
         return {"OTEL_SERVICE_NAME": SERVICE_NAME}
 
-    def wrapper_script(self) -> str:
+    def wrapper_script(self):
         return "opentelemetry-instrument"
 
-    def run_client(self) -> None:
+    def run_client(self):
         print("run_client()")
+        return None
 
-    def max_wait(self) -> Optional[float]:
-        return 60
-
-    def validate(self, telemetry: Telemetry) -> None:
+    def validate(self, telemetry: Telemetry):
         assert telemetry.num_spans() == NUM_ADDS
