@@ -16,7 +16,7 @@ import time
 from typing import Mapping, Optional, Sequence
 
 from opentelemetry import trace
-from oteltest.common import OtelTest, Telemetry
+from oteltest import OtelTest, Telemetry
 
 SERVICE_NAME = "integration-test"
 NUM_ADDS = 12
