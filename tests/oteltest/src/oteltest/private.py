@@ -124,7 +124,21 @@ def wait_for_subprocess(
         return decode(ex.stdout), decode(ex.stderr), process.returncode
 
 
-def print_result(stdout, stderr, returncode):
+def decode(b: bytes):
+    return b.decode("utf-8") if b else None
+
+
+def run_subprocess(args):
+    print(f"- Subprocess: {args}")
+    result = subprocess.run(
+        args,
+        capture_output=True,
+        text=True,
+    )
+    print_result(result.stdout, result.stderr, result.returncode)
+
+
+def print_result(stdout: str, stderr: str, returncode: int):
     print(f"- Return Code: {returncode}")
     print("- Standard Output:")
     if stdout:
@@ -133,22 +147,6 @@ def print_result(stdout, stderr, returncode):
     if stderr:
         print(stderr)
     print("- End Subprocess -\n")
-
-
-def run_subprocess(args):
-    print(f"- Subprocess: {args}")
-    result = subprocess.run(
-        args,
-        capture_output=True,
-    )
-    returncode = result.returncode
-    stdout = result.stdout
-    stderr = result.stderr
-    print_result(returncode, stderr, stdout)
-
-
-def decode(s):
-    return s.decode("utf-8")
 
 
 def load_test_class_for_script(module_name):
