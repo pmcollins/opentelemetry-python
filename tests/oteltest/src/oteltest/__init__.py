@@ -133,6 +133,9 @@ class OtelTest(abc.ABC):
         pass
 
     @abc.abstractmethod
-    def validate(self, telemetry: Telemetry) -> None:
+    def on_script_end(self, stdout: str, stderr: str, returncode: int) -> None:
         pass
 
+    @abc.abstractmethod
+    def on_shutdown(self, telemetry: Telemetry) -> None:
+        pass

@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import typing
 import venv
 from pathlib import Path
 
@@ -26,7 +27,7 @@ from oteltest.sink import GrpcSink, RequestHandler
 
 def run(script_dir: str, wheel_file: str, venv_parent_dir: str):
     temp_dir = venv_parent_dir or tempfile.mkdtemp()
-    print(f"using temp dir: {temp_dir}")
+    print(f"- Using temp dir: {temp_dir}")
 
     sys.path.append(script_dir)
 
@@ -69,7 +70,7 @@ def setup_script_environment(tempdir, script_dir, script, wheel_file):
 
     save_telemetry_json(script_dir, module_name, handler.telemetry_to_json())
 
-    oteltest_instance.validate(handler.telemetry)
+    oteltest_instance.on_shutdown(handler.telemetry)
     print(f"- {script} PASSED")
 
 
@@ -89,10 +90,11 @@ def run_python_script(script, script_dir, oteltest_instance: OtelTest, v):
     if wrapper_script is not None:
         python_script_cmd.insert(0, v.path_to_executable(wrapper_script))
 
-    process = subprocess.Popen(
+    sprocess = subprocess.Popen(
         python_script_cmd,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
+        text=True,
         env=oteltest_instance.environment_variables(),
     )
 
@@ -106,12 +108,31 @@ def run_python_script(script, script_dir, oteltest_instance: OtelTest, v):
             f"- Will wait for up to {timeout} seconds for {script} to finish"
         )
 
+    stdout, stderr, returncode = wait_for_subprocess(sprocess, script, timeout)
+    print_result(stdout, stderr, returncode)
+    oteltest_instance.on_script_end(stdout, stderr, returncode)
+
+
+def wait_for_subprocess(
+    process: subprocess.Popen, script, timeout
+) -> typing.Tuple[str, str, int]:
     try:
         stdout, stderr = process.communicate(timeout=timeout)
-        print_result(process.returncode, stderr, stdout)
+        return stdout, stderr, process.returncode
     except subprocess.TimeoutExpired as ex:
         print(f"- Script {script} was force quit")
-        print_result(process.returncode, ex.stderr, ex.stdout)
+        return decode(ex.stdout), decode(ex.stderr), process.returncode
+
+
+def print_result(stdout, stderr, returncode):
+    print(f"- Return Code: {returncode}")
+    print("- Standard Output:")
+    if stdout:
+        print(stdout)
+    print("- Standard Error:")
+    if stderr:
+        print(stderr)
+    print("- End Subprocess -\n")
 
 
 def run_subprocess(args):
@@ -126,19 +147,8 @@ def run_subprocess(args):
     print_result(returncode, stderr, stdout)
 
 
-def print_result(returncode, stderr, stdout):
-    print(f"- Return Code: {returncode}")
-    print("- Standard Output:")
-    if stdout:
-        print(decode(stdout))
-    print("- Standard Error:")
-    if stderr:
-        print(decode(stderr))
-    print("- End Subprocess -\n")
-
-
-def decode(stream):
-    return stream.decode("utf-8").strip()
+def decode(s):
+    return s.decode("utf-8")
 
 
 def load_test_class_for_script(module_name):

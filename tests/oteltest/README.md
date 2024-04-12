@@ -18,55 +18,64 @@ pip install oteltest
 
 ## Overview
 
-The `oteltest` package contains utilities for testing OpenTelemetry Python.
+The `oteltest` package contains utilities for testing OpenTelemetry Python. The motivation for oteltest is to provide
+an easy way to test OpenTelemetry Python, which involves a Python environment with specific packages
 
 ### oteltest
 
-`oteltest` is a CLI command which you can use to run black box tests against OpenTelemetry Python scripts.
+The `oteltest` command runs black box tests against Python scripts that send telemetry.
+
+
+#### Motivation
+
+The motivation for oteltest is to make it as easy as possible to run code that emits telemetry, with all of the
+information required to run a test co-located with the code being tested. With that in place, you should be able to
+point something at it that sets up the environment, runs the script, records the telemetry that the script sends, and
+sends that telemetry back to the script so that the validate can be co-located with the test configuration, and the test
+code.
 
 #### Execution
 
-You can run `oteltest` as a shell command and provide as an argument either a file:
-
-```shell
-oteltest my_script.py
-```
-
-or a directory:
+Run `oteltest` as a shell command and provide a directory as an argument:
 
 ```shell
 oteltest my_script_dir
 ```
 
-Given a directory, the `oteltest` command will attempt to run all `oteltest`-runnable scripts in `my_script_dir`,
-non-recursively.
+in which case it will attempt to run all `oteltest`-eligible scripts in `my_script_dir`, non-recursively.
 
 #### Operation
 
-Running `oteltest` against `my_script.py` 1) starts a Python OTLP listener, 2) creates a new Python virtual
-environment, 3) installs any `requirements()`, 4) starts a subprocess with any requested `wrapper_script()`
-and `environment_variables()`, 5) waits for `my_script.py` to complete, 6) stops the OTLP listener, and finally 7) sends
-the listener's telemetry received back to `my_script.py` in the form of a call to `validate(telemetry)`. It also writes
-a `.json` file with that telemetry next to the script (with the same name but `.json` extension).
+Running `oteltest` against a directory containing `my_script.py`
 
-#### Scripts
+1) Starts an [otelsink](#otelsink) instance
+2) Creates a new Python virtual environment with `requirements()`
+3) Using that new environment, starts running `my_script.py` in a subprocess
+4) Meanwhile, calls `OtelTest#on_script_start()` waiting until completion
+5) Depending on the return value from `on_script_start()`, waits for `my_script.py` to complete or interrupts
+6) Stops the OTLP listener
+7) Calls `validate(telemetry)` with otelsink's received telemetry
+8) Writes the telemetry to a `.json` file next to the script (script name but `.json`)
 
-For a Python script to be runnable by `oteltest`, it must both be executable and define an implementation of
-`OtelTest`. The script below has an implementation called `MyTest`:
+#### Script Eligibility
+
+For a Python script to be runnable by `oteltest`, it must both be executable and define an implementation of the
+[OtelTest]() abstract base class. The script below has an implementation called `MyTest`:
 
 ```python
 import time
-from opentelemetry import trace
-from oteltest.common import OtelTest, Telemetry
 
-SERVICE_NAME = "my-test"
+from opentelemetry import trace
+from oteltest import OtelTest, Telemetry
+
+SERVICE_NAME = "integration-test"
 NUM_ADDS = 12
 
 if __name__ == "__main__":
     tracer = trace.get_tracer("my-tracer")
     for i in range(NUM_ADDS):
         with tracer.start_as_current_span("my-span"):
-            print(f"{i + 1}/{NUM_ADDS}")
+            print(f"simple_loop.py: {i + 1}/{NUM_ADDS}")
             time.sleep(0.5)
 
 
@@ -74,22 +83,18 @@ class MyTest(OtelTest):
     def requirements(self):
         return "opentelemetry-distro", "opentelemetry-exporter-otlp-proto-grpc"
 
+    def environment_variables(self):
+        return {"OTEL_SERVICE_NAME": SERVICE_NAME}
+
     def wrapper_script(self):
         return "opentelemetry-instrument"
 
-    def environment_variables(self):
-        return {"OTEL_SERVICE_NAME": SERVICE_NAME}
+    def on_script_start(self):
+        return None
 
     def validate(self, telemetry: Telemetry):
         assert telemetry.num_spans() == NUM_ADDS
 ```
-
-#### Usage with OTel Examples
-
-Runnable examples are a great way to get up to speed on OpenTelemetry but running them can be tedious.
-oteltest lets you run example scripts and potentially see the telemetry you just generated without starting Docker or
-setting up Python enviornments. Adding an `OtelTest` implementation (e.g. `MyTest` above) to an existing example script
-lets you run it without having to set up a Python environment with dependencies.
 
 ### otelsink
 

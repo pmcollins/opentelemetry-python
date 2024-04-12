@@ -41,5 +41,8 @@ class MyTest(OtelTest):
     def on_script_start(self):
         return None
 
-    def validate(self, telemetry: Telemetry):
+    def on_script_end(self, stdout, stderr, returncode) -> None:
+        pass
+
+    def on_shutdown(self, telemetry: Telemetry):
         assert telemetry.num_spans() == NUM_ADDS
