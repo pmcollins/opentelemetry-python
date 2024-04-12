@@ -68,15 +68,30 @@ def setup_script_environment(tempdir, script_dir, script, wheel_file):
 
     v.rm()
 
-    save_telemetry_json(script_dir, module_name, handler.telemetry_to_json())
+    filename = get_next_json_file(script_dir, module_name)
+    print(f"- Will save telemetry to {filename}")
+    save_telemetry_json(
+        script_dir, filename, handler.telemetry_to_json()
+    )
 
     oteltest_instance.on_shutdown(handler.telemetry)
     print(f"- {script} PASSED")
 
 
-def save_telemetry_json(script_dir, module_name, json_str):
-    path_str = str(Path(script_dir) / f"{module_name}.json")
-    with open(path_str, "w") as file:
+def get_next_json_file(path_to_dir: str, module_name: str):
+    p = Path(path_to_dir)
+    max_index = -1
+    for file in p.glob(f"{module_name}.*.json"):
+        parts = file.stem.split(".")
+        if parts[-1].isdigit():  # Ensure the last part is an integer
+            index = int(parts[-1])
+            if index > max_index:
+                max_index = index
+    return f"{module_name}.{max_index+1}.json"
+
+def save_telemetry_json(script_dir: str, file_name: str, json_str: str):
+    path = Path(script_dir) / file_name
+    with open(str(path), "w") as file:
         file.write(json_str)
 
 
