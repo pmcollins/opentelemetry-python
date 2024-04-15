@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import typing
 import venv
 from pathlib import Path
@@ -70,9 +71,7 @@ def setup_script_environment(tempdir, script_dir, script, wheel_file):
 
     filename = get_next_json_file(script_dir, module_name)
     print(f"- Will save telemetry to {filename}")
-    save_telemetry_json(
-        script_dir, filename, handler.telemetry_to_json()
-    )
+    save_telemetry_json(script_dir, filename, handler.telemetry_to_json())
 
     oteltest_instance.on_shutdown(handler.telemetry)
     print(f"- {script} PASSED")
@@ -88,6 +87,7 @@ def get_next_json_file(path_to_dir: str, module_name: str):
             if index > max_index:
                 max_index = index
     return f"{module_name}.{max_index+1}.json"
+
 
 def save_telemetry_json(script_dir: str, file_name: str, json_str: str):
     path = Path(script_dir) / file_name
@@ -197,28 +197,38 @@ class Venv:
 
 class AccumulatingHandler(RequestHandler):
     def __init__(self):
+        self.start_time = time.time_ns()
         self.telemetry = Telemetry()
 
     def handle_logs(
         self, request: ExportLogsServiceRequest, context
     ):  # noqa: ARG002
         self.telemetry.add_log(
-            MessageToDict(request), get_context_headers(context)
+            MessageToDict(request),
+            get_context_headers(context),
+            self.get_millis_since_test_start(),
         )
 
     def handle_metrics(
         self, request: ExportMetricsServiceRequest, context
     ):  # noqa: ARG002
         self.telemetry.add_metric(
-            MessageToDict(request), get_context_headers(context)
+            MessageToDict(request),
+            get_context_headers(context),
+            self.get_millis_since_test_start(),
         )
 
     def handle_trace(
         self, request: ExportTraceServiceRequest, context
     ):  # noqa: ARG002
         self.telemetry.add_trace(
-            MessageToDict(request), get_context_headers(context)
+            MessageToDict(request),
+            get_context_headers(context),
+            self.get_millis_since_test_start(),
         )
+
+    def get_millis_since_test_start(self):
+        return time.time_ns() - self.start_time
 
     def telemetry_to_json(self):
         return self.telemetry.to_json()

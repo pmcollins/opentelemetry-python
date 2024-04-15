@@ -23,6 +23,7 @@ from typing import List, Mapping, Optional, Sequence
 class Request:
     request: dict
     headers: dict
+    test_elapsed_ms: int
 
     def get_header(self, name):
         return self.headers.get(name)
@@ -34,6 +35,7 @@ class Request:
         return {
             "request": self.request,
             "headers": self.headers,
+            "test_elapsed_ms": self.test_elapsed_ms,
         }
 
 
@@ -48,14 +50,14 @@ class Telemetry:
         self.metric_reqs: List[Request] = metric_reqs or []
         self.trace_reqs: List[Request] = trace_reqs or []
 
-    def add_log(self, log: dict, headers: dict):
-        self.log_reqs.append(Request(log, headers))
+    def add_log(self, log: dict, headers: dict, test_elapsed_ms: int):
+        self.log_reqs.append(Request(log, headers, test_elapsed_ms))
 
-    def add_metric(self, metric: dict, headers: dict):
-        self.metric_reqs.append(Request(metric, headers))
+    def add_metric(self, metric: dict, headers: dict, test_elapsed_ms: int):
+        self.metric_reqs.append(Request(metric, headers, test_elapsed_ms))
 
-    def add_trace(self, trace: dict, headers: dict):
-        self.trace_reqs.append(Request(trace, headers))
+    def add_trace(self, trace: dict, headers: dict, test_elapsed_ms: int):
+        self.trace_reqs.append(Request(trace, headers, test_elapsed_ms))
 
     def get_trace_requests(self) -> List[Request]:
         return self.trace_reqs

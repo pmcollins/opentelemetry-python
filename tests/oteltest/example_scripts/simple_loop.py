@@ -17,7 +17,7 @@ import time
 from opentelemetry import trace
 from oteltest import OtelTest, Telemetry
 
-SERVICE_NAME = "integration-test"
+SERVICE_NAME = "my-otel-test"
 NUM_ADDS = 12
 
 if __name__ == "__main__":
@@ -28,7 +28,7 @@ if __name__ == "__main__":
             time.sleep(0.5)
 
 
-class MyTest(OtelTest):
+class MyOtelTest(OtelTest):
     def requirements(self):
         return "opentelemetry-distro", "opentelemetry-exporter-otlp-proto-grpc"
 
