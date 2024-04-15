@@ -28,7 +28,7 @@ from oteltest.sink import GrpcSink, RequestHandler
 
 def run(script_dir: str, wheel_file: str, venv_parent_dir: str):
     temp_dir = venv_parent_dir or tempfile.mkdtemp()
-    print(f"- Using temp dir: {temp_dir}")
+    print(f"- Using temp dir for venvs: {temp_dir}")
 
     sys.path.append(script_dir)
 
@@ -206,7 +206,7 @@ class AccumulatingHandler(RequestHandler):
         self.telemetry.add_log(
             MessageToDict(request),
             get_context_headers(context),
-            self.get_millis_since_test_start(),
+            self.get_test_elapsed_ms(),
         )
 
     def handle_metrics(
@@ -215,7 +215,7 @@ class AccumulatingHandler(RequestHandler):
         self.telemetry.add_metric(
             MessageToDict(request),
             get_context_headers(context),
-            self.get_millis_since_test_start(),
+            self.get_test_elapsed_ms(),
         )
 
     def handle_trace(
@@ -224,11 +224,11 @@ class AccumulatingHandler(RequestHandler):
         self.telemetry.add_trace(
             MessageToDict(request),
             get_context_headers(context),
-            self.get_millis_since_test_start(),
+            self.get_test_elapsed_ms(),
         )
 
-    def get_millis_since_test_start(self):
-        return time.time_ns() - self.start_time
+    def get_test_elapsed_ms(self):
+        return round((time.time_ns() - self.start_time) / 1e6)
 
     def telemetry_to_json(self):
         return self.telemetry.to_json()
