@@ -18,21 +18,11 @@ pip install oteltest
 
 ## Overview
 
-The `oteltest` package contains utilities for testing OpenTelemetry Python. The motivation for oteltest is to provide
-an easy way to test OpenTelemetry Python, which involves a Python environment with specific packages
+The `oteltest` package contains utilities for testing OpenTelemetry Python.
 
 ### oteltest
 
 The `oteltest` command runs black box tests against Python scripts that send telemetry.
-
-
-#### Motivation
-
-The motivation for oteltest is to make it as easy as possible to run code that emits telemetry, with all of the
-information required to run a test co-located with the code being tested. With that in place, you should be able to
-point something at it that sets up the environment, runs the script, records the telemetry that the script sends, and
-sends that telemetry back to the script so that the validate can be co-located with the test configuration, and the test
-code.
 
 #### Execution
 
@@ -50,17 +40,17 @@ Running `oteltest` against a directory containing `my_script.py`
 
 1) Starts an [otelsink](#otelsink) instance
 2) Creates a new Python virtual environment with `requirements()`
-3) Using that new environment, starts running `my_script.py` in a subprocess
+3) In that environment, starts running `my_script.py` in a subprocess
 4) Meanwhile, calls `OtelTest#on_script_start()` waiting until completion
 5) Depending on the return value from `on_script_start()`, waits for `my_script.py` to complete or interrupts
 6) Stops the OTLP listener
 7) Calls `validate(telemetry)` with otelsink's received telemetry
-8) Writes the telemetry to a `.json` file next to the script (script name but `.json`)
+8) Writes the telemetry to a `.json` file next to the script (script name but with ".{number}.json" instead of ".py")
 
 #### Script Eligibility
 
 For a Python script to be runnable by `oteltest`, it must both be executable and define an implementation of the
-[OtelTest]() abstract base class. The script below has an implementation called `MyTest`:
+[OtelTest]() abstract base class. The script below has an implementation called `MyOtelTest`:
 
 ```python
 import time
@@ -68,18 +58,18 @@ import time
 from opentelemetry import trace
 from oteltest import OtelTest, Telemetry
 
-SERVICE_NAME = "integration-test"
+SERVICE_NAME = "my-otel-test"
 NUM_ADDS = 12
 
 if __name__ == "__main__":
     tracer = trace.get_tracer("my-tracer")
     for i in range(NUM_ADDS):
         with tracer.start_as_current_span("my-span"):
-            print(f"simple_loop.py: {i + 1}/{NUM_ADDS}")
+            print(f"simple_loop.py: {i+1}/{NUM_ADDS}")
             time.sleep(0.5)
 
 
-class MyTest(OtelTest):
+class MyOtelTest(OtelTest):
     def requirements(self):
         return "opentelemetry-distro", "opentelemetry-exporter-otlp-proto-grpc"
 
@@ -92,7 +82,10 @@ class MyTest(OtelTest):
     def on_script_start(self):
         return None
 
-    def validate(self, telemetry: Telemetry):
+    def on_script_end(self, stdout, stderr, returncode) -> None:
+        pass
+
+    def on_shutdown(self, telemetry: Telemetry):
         assert telemetry.num_spans() == NUM_ADDS
 ```
 
