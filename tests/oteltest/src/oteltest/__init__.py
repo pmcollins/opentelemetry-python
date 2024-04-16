@@ -118,26 +118,59 @@ def trace_attribute_as_str_array(tr: dict, attr_name) -> [str]:
 
 
 class OtelTest(abc.ABC):
+    """
+    Abstract base class for tests using OtelTest.
+
+    The first three methods are for configuration and the second two are callbacks.
+
+    No need to instantiate or call it -- just define a subclass of OtelTest anywhere in your script.
+
+    When you run the `oteltest` command against your script, a new Python virtual environment is created with the
+    configuration specified by this class's implementation. The two callbacks are then run not in the environment of the
+    script but rather in the environment of the oteltest command. They are not meant to be instrumented.
+    """
+
     @abc.abstractmethod
     def environment_variables(self) -> Mapping[str, str]:
+        """
+        Return a mapping of environment variables to their values. These will become the env vars for your script.
+        """
         pass
 
     @abc.abstractmethod
     def requirements(self) -> Sequence[str]:
+        """
+        Return a sequence of requirements for the script. Each string should be formatted as for `pip install`.
+        """
         pass
 
     @abc.abstractmethod
-    def wrapper_script(self) -> str:
+    def wrapper(self) -> str:
+        """
+        Return a wrapper command to run the script. For example, return 'opentelemetry-instrument' for
+        `opentelemetry-instrument python my_script.py`. Return an empty string for`python my_script.py`.
+        """
         pass
 
     @abc.abstractmethod
-    def on_script_start(self) -> Optional[float]:
+    def on_start(self) -> Optional[float]:
+        """
+        Called immediately after the script has started (doesn't wait for completion).
+
+        Optionally, add client code here to call your server and have it produce telemetry.
+        Note: you may need to sleep or check for liveness first!
+        Note: this method will run in the Python virtual environment of `oteltest`, not that of the script.
+
+        Return a float indicating how long to wait in seconds for the script to finish. Once that time has elapsed,
+        the subprocess running the script will be force terminated. Or return `None` to allow the script to finish on
+        its own, in which case the script should shut itself down.
+        """
         pass
 
     @abc.abstractmethod
-    def on_script_end(self, stdout: str, stderr: str, returncode: int) -> None:
-        pass
-
-    @abc.abstractmethod
-    def on_shutdown(self, telemetry: Telemetry) -> None:
+    def on_stop(
+        self, telemetry: Telemetry, stdout: str, stderr: str, returncode: int
+    ) -> None:
+        """Called immediately after the script has ended with both the telemetry otelsink received while the script
+        was running and the output of the script (stdout, stderr, returncode)."""
         pass

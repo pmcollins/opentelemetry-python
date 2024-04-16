@@ -65,7 +65,7 @@ def setup_script_environment(tempdir, script_dir, script, wheel_file):
         print(f"- Will install requirement: '{req}'")
         run_subprocess([pip_path, "install", req])
 
-    run_python_script(script, script_dir, oteltest_instance, v)
+    stdout, stderr, returncode = run_python_script(script, script_dir, oteltest_instance, v)
 
     v.rm()
 
@@ -73,7 +73,7 @@ def setup_script_environment(tempdir, script_dir, script, wheel_file):
     print(f"- Will save telemetry to {filename}")
     save_telemetry_json(script_dir, filename, handler.telemetry_to_json())
 
-    oteltest_instance.on_shutdown(handler.telemetry)
+    oteltest_instance.on_stop(handler.telemetry, stdout, stderr, returncode)
     print(f"- {script} PASSED")
 
 
@@ -95,13 +95,13 @@ def save_telemetry_json(script_dir: str, file_name: str, json_str: str):
         file.write(json_str)
 
 
-def run_python_script(script, script_dir, oteltest_instance: OtelTest, v):
+def run_python_script(script, script_dir, oteltest_instance: OtelTest, v) -> typing.Tuple[str, str, int]:
     python_script_cmd = [
         v.path_to_executable("python"),
         str(Path(script_dir) / script),
     ]
 
-    wrapper_script = oteltest_instance.wrapper_script()
+    wrapper_script = oteltest_instance.wrapper()
     if wrapper_script is not None:
         python_script_cmd.insert(0, v.path_to_executable(wrapper_script))
 
@@ -113,19 +113,17 @@ def run_python_script(script, script_dir, oteltest_instance: OtelTest, v):
         env=oteltest_instance.environment_variables(),
     )
 
-    timeout = oteltest_instance.on_script_start()
+    timeout = oteltest_instance.on_start()
     if timeout is None:
         print(
-            f"- Will wait indefinitely for {script} to finish (on_script_start() returned None)"
+            f"- Will wait indefinitely for {script} to finish (on_start() returned None)"
         )
     else:
         print(
             f"- Will wait for up to {timeout} seconds for {script} to finish"
         )
 
-    stdout, stderr, returncode = wait_for_subprocess(sprocess, script, timeout)
-    print_result(stdout, stderr, returncode)
-    oteltest_instance.on_script_end(stdout, stderr, returncode)
+    return wait_for_subprocess(sprocess, script, timeout)
 
 
 def wait_for_subprocess(

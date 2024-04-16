@@ -35,14 +35,11 @@ class MyOtelTest(OtelTest):
     def environment_variables(self):
         return {"OTEL_SERVICE_NAME": SERVICE_NAME}
 
-    def wrapper_script(self):
+    def wrapper(self):
         return "opentelemetry-instrument"
 
-    def on_script_start(self):
+    def on_start(self):
         return None
 
-    def on_script_end(self, stdout, stderr, returncode) -> None:
-        pass
-
-    def on_shutdown(self, telemetry: Telemetry):
+    def on_stop(self, telemetry: Telemetry, stdout: str, stderr: str, returncode: int) -> None:
         assert telemetry.num_spans() == NUM_ADDS
