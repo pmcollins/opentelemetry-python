@@ -112,7 +112,7 @@ def run_python_script(
         timeout = oteltest_instance.on_start()
     except Exception as ex:  # pylint: disable=W0718
         print(
-            f"- Setting timeout to zero: failed to start python script: {script}: {ex}"
+            f"- Setting timeout to zero: on_start() threw an exception: {ex}"
         )
         timeout = 0
 
