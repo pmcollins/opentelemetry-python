@@ -4,45 +4,35 @@ on:
   push:
     branches: [ main ]
 
+permissions:
+  contents: read
+
 jobs:
   sdk-benchmarks:
-    env:
-      py311: "3.11"
-      RUN_MATRIX_COMBINATION: ${{ matrix.python-version }}-sdk-${{ matrix.os }}
-    runs-on: self-hosted
-    strategy:
-      # Ensures the entire test matrix is run, even if one permutation fails
-      fail-fast: false
-      matrix:
-        python-version: [py311]
-        os: [ubuntu-20.04, windows-2019]
+    permissions:
+      contents: write # required for pushing to gh-pages
+    runs-on: oracle-bare-metal-64cpu-512gb-x86-64
+    container:
+      image: python:3.13-slim
     steps:
+    - name: Install Git # since Git isn't available in the container image used above
+      run: |
+        apt-get update
+        apt-get install -y git
+    - name: Make repo safe for Git inside container
+      run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
     - name: Checkout Core Repo @ SHA - ${{ github.sha }}
-      uses: actions/checkout@v2
-    - name: Set up Python ${{ env[matrix.python-version] }}
-      uses: actions/setup-python@v2
-      with:
-        python-version: ${{ env[matrix.python-version] }}
-        architecture: 'x64'
+      uses: actions/checkout@v4
     - name: Install tox
-      run: pip install tox
-    - name: Cache tox environment
-      # Preserves .tox directory between runs for faster installs
-      uses: actions/cache@v2
-      with:
-        path: |
-          .tox
-          ~/.cache/pip
-        key: v3-tox-cache-${{ env.RUN_MATRIX_COMBINATION }}-${{ hashFiles('tox.ini',
-          'dev-requirements.txt') }}-core
+      run: pip install tox-uv
     - name: Run tox
-      run: tox -f ${{ matrix.python-version }}-sdk -- -k opentelemetry-sdk/tests/performance/benchmarks --benchmark-json=opentelemetry-sdk/tests/output.json
+      run: tox -e benchmark-opentelemetry-sdk -- -k opentelemetry-sdk/benchmarks --benchmark-json=opentelemetry-sdk/output.json
     - name: Report on SDK benchmark results
       uses: benchmark-action/github-action-benchmark@v1
       with:
-        name: OpenTelemetry Python SDK Benchmarks - Python ${{ env[matrix.python-version ]}} - SDK
+        name: OpenTelemetry Python SDK Benchmarks
         tool: pytest
-        output-file-path: opentelemetry-sdk/tests/output.json
+        output-file-path: opentelemetry-sdk/output.json
         gh-pages-branch: gh-pages
         github-token: ${{ secrets.GITHUB_TOKEN }}
         # Make a commit on `gh-pages` with benchmarks from previous step

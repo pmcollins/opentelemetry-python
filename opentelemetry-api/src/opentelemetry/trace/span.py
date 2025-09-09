@@ -45,7 +45,6 @@ _logger = logging.getLogger(__name__)
 
 
 def _is_valid_pair(key: str, value: str) -> bool:
-
     return (
         isinstance(key, str)
         and _KEY_PATTERN.fullmatch(key) is not None
@@ -80,7 +79,7 @@ class Span(abc.ABC):
 
     @abc.abstractmethod
     def set_attributes(
-        self, attributes: typing.Dict[str, types.AttributeValue]
+        self, attributes: typing.Mapping[str, types.AttributeValue]
     ) -> None:
         """Sets Attributes.
 
@@ -127,7 +126,8 @@ class Span(abc.ABC):
 
         Adds a single `Link` with the `SpanContext` of the span to link to and,
         optionally, attributes passed as arguments. Implementations may ignore
-        calls with an invalid span context.
+        calls with an invalid span context if both attributes and TraceState
+        are empty.
 
         Note: It is preferred to add links at span creation, instead of calling
         this method later since samplers can only consider information already
@@ -529,7 +529,7 @@ class NonRecordingSpan(Span):
         pass
 
     def set_attributes(
-        self, attributes: typing.Dict[str, types.AttributeValue]
+        self, attributes: typing.Mapping[str, types.AttributeValue]
     ) -> None:
         pass
 
@@ -592,7 +592,7 @@ def format_trace_id(trace_id: int) -> str:
         trace_id: Trace ID int
 
     Returns:
-        The trace ID as 32-byte hexadecimal string
+        The trace ID (16 bytes) cast to a 32-character hexadecimal string
     """
     return format(trace_id, "032x")
 
@@ -603,6 +603,6 @@ def format_span_id(span_id: int) -> str:
         span_id: Span ID int
 
     Returns:
-        The span ID as 16-byte hexadecimal string
+        The span ID (8 bytes) cast to a 16-character hexadecimal string
     """
     return format(span_id, "016x")

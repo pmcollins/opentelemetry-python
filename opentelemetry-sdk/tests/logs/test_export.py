@@ -14,12 +14,14 @@
 
 # pylint: disable=protected-access
 import logging
-import multiprocessing
 import os
 import time
 import unittest
 from concurrent.futures import ThreadPoolExecutor
+from sys import version_info
 from unittest.mock import Mock, patch
+
+from pytest import mark
 
 from opentelemetry._logs import SeverityNumber
 from opentelemetry.sdk import trace
@@ -44,9 +46,18 @@ from opentelemetry.sdk.environment_variables import (
 )
 from opentelemetry.sdk.resources import Resource as SDKResource
 from opentelemetry.sdk.util.instrumentation import InstrumentationScope
-from opentelemetry.test.concurrency_test import ConcurrencyTestBase
-from opentelemetry.trace import TraceFlags
+from opentelemetry.trace import (
+    NonRecordingSpan,
+    SpanContext,
+    TraceFlags,
+    set_span_in_context,
+)
 from opentelemetry.trace.span import INVALID_SPAN_CONTEXT
+
+EMPTY_LOG = LogData(
+    log_record=LogRecord(),
+    instrumentation_scope=InstrumentationScope("example", "example"),
+)
 
 
 class TestSimpleLogRecordProcessor(unittest.TestCase):
@@ -70,6 +81,9 @@ class TestSimpleLogRecordProcessor(unittest.TestCase):
         self.assertEqual(warning_log_record.severity_text, "WARN")
         self.assertEqual(
             warning_log_record.severity_number, SeverityNumber.WARN
+        )
+        self.assertEqual(
+            finished_logs[0].instrumentation_scope.name, "default_level"
         )
 
     def test_simple_log_record_processor_custom_level(self):
@@ -104,6 +118,12 @@ class TestSimpleLogRecordProcessor(unittest.TestCase):
         self.assertEqual(
             fatal_log_record.severity_number, SeverityNumber.FATAL
         )
+        self.assertEqual(
+            finished_logs[0].instrumentation_scope.name, "custom_level"
+        )
+        self.assertEqual(
+            finished_logs[1].instrumentation_scope.name, "custom_level"
+        )
 
     def test_simple_log_record_processor_trace_correlation(self):
         exporter = InMemoryLogExporter()
@@ -129,6 +149,9 @@ class TestSimpleLogRecordProcessor(unittest.TestCase):
         self.assertEqual(
             log_record.trace_flags, INVALID_SPAN_CONTEXT.trace_flags
         )
+        self.assertEqual(
+            finished_logs[0].instrumentation_scope.name, "trace_correlation"
+        )
         exporter.clear()
 
         tracer = trace.TracerProvider().get_tracer(__name__)
@@ -140,6 +163,10 @@ class TestSimpleLogRecordProcessor(unittest.TestCase):
             self.assertEqual(log_record.body, "Critical message within span")
             self.assertEqual(log_record.severity_text, "CRITICAL")
             self.assertEqual(log_record.severity_number, SeverityNumber.FATAL)
+            self.assertEqual(
+                finished_logs[0].instrumentation_scope.name,
+                "trace_correlation",
+            )
             span_context = span.get_span_context()
             self.assertEqual(log_record.trace_id, span_context.trace_id)
             self.assertEqual(log_record.span_id, span_context.span_id)
@@ -166,10 +193,12 @@ class TestSimpleLogRecordProcessor(unittest.TestCase):
         self.assertEqual(
             warning_log_record.severity_number, SeverityNumber.WARN
         )
+        self.assertEqual(
+            finished_logs[0].instrumentation_scope.name, "shutdown"
+        )
         exporter.clear()
         logger_provider.shutdown()
-        with self.assertLogs(level=logging.WARNING):
-            logger.warning("Log after shutdown")
+        logger.warning("Log after shutdown")
         finished_logs = exporter.get_finished_logs()
         self.assertEqual(len(finished_logs), 0)
 
@@ -206,9 +235,113 @@ class TestSimpleLogRecordProcessor(unittest.TestCase):
             for item in finished_logs
         ]
         self.assertEqual(expected, emitted)
+        for item in finished_logs:
+            self.assertEqual(
+                item.instrumentation_scope.name, "different_msg_types"
+            )
+
+    def test_simple_log_record_processor_custom_single_obj(self):
+        """
+        Tests that special-case handling for logging a single non-string object
+        is correctly applied.
+        """
+        exporter = InMemoryLogExporter()
+        log_record_processor = BatchLogRecordProcessor(exporter)
+
+        provider = LoggerProvider()
+        provider.add_log_record_processor(log_record_processor)
+
+        logger = logging.getLogger("single_obj")
+        logger.addHandler(LoggingHandler(logger_provider=provider))
+
+        # NOTE: the behaviour of `record.getMessage` is detailed in the
+        # `logging.Logger.debug` documentation:
+        # > The msg is the message format string, and the args are the arguments
+        # > which are merged into msg using the string formatting operator. [...]
+        # > No % formatting operation is performed on msg when no args are supplied.
+
+        # This test uses the presence of '%s' in the first arg to determine if
+        # formatting was applied
+
+        # string msg with no args - getMessage bypasses formatting and sets the string directly
+        logger.warning("a string with a percent-s: %s")
+        # string msg with args - getMessage formats args into the msg
+        logger.warning("a string with a percent-s: %s", "and arg")
+        # non-string msg with args - getMessage stringifies msg and formats args into it
+        logger.warning(["a non-string with a percent-s", "%s"], "and arg")
+        # non-string msg with no args:
+        #  - normally getMessage would stringify the object and bypass formatting
+        #  - SPECIAL CASE: bypass stringification as well to keep the raw object
+        logger.warning(["a non-string with a percent-s", "%s"])
+        log_record_processor.shutdown()
+
+        finished_logs = exporter.get_finished_logs()
+        expected = [
+            ("a string with a percent-s: %s"),
+            ("a string with a percent-s: and arg"),
+            ("['a non-string with a percent-s', 'and arg']"),
+            (["a non-string with a percent-s", "%s"]),
+        ]
+        for emitted, expected in zip(finished_logs, expected):
+            self.assertEqual(emitted.log_record.body, expected)
+            self.assertEqual(emitted.instrumentation_scope.name, "single_obj")
+
+    def test_simple_log_record_processor_different_msg_types_with_formatter(
+        self,
+    ):
+        exporter = InMemoryLogExporter()
+        log_record_processor = BatchLogRecordProcessor(exporter)
+
+        provider = LoggerProvider()
+        provider.add_log_record_processor(log_record_processor)
+
+        logger = logging.getLogger("different_msg_types")
+        handler = LoggingHandler(logger_provider=provider)
+        handler.setFormatter(
+            logging.Formatter("%(name)s - %(levelname)s - %(message)s")
+        )
+        logger.addHandler(handler)
+
+        logger.warning("warning message: %s", "possible upcoming heatwave")
+        logger.error("Very high rise in temperatures across the globe")
+        logger.critical("Temperature hits high 420 C in Hyderabad")
+        logger.warning(["list", "of", "strings"])
+        logger.error({"key": "value"})
+        log_record_processor.shutdown()
+
+        finished_logs = exporter.get_finished_logs()
+        expected = [
+            (
+                "different_msg_types - WARNING - warning message: possible upcoming heatwave",
+                "WARN",
+            ),
+            (
+                "different_msg_types - ERROR - Very high rise in temperatures across the globe",
+                "ERROR",
+            ),
+            (
+                "different_msg_types - CRITICAL - Temperature hits high 420 C in Hyderabad",
+                "CRITICAL",
+            ),
+            (
+                "different_msg_types - WARNING - ['list', 'of', 'strings']",
+                "WARN",
+            ),
+            ("different_msg_types - ERROR - {'key': 'value'}", "ERROR"),
+        ]
+        emitted = [
+            (item.log_record.body, item.log_record.severity_text)
+            for item in finished_logs
+        ]
+        self.assertEqual(expected, emitted)
 
 
-class TestBatchLogRecordProcessor(ConcurrencyTestBase):
+# Many more test cases for the BatchLogRecordProcessor exist under
+# opentelemetry-sdk/tests/shared_internal/test_batch_processor.py.
+# Important: make sure to call .shutdown() on the BatchLogRecordProcessor
+# before the end of the test, otherwise the worker thread will continue
+# to run after the end of the test.
+class TestBatchLogRecordProcessor(unittest.TestCase):
     def test_emit_call_log_record(self):
         exporter = InMemoryLogExporter()
         log_record_processor = Mock(wraps=BatchLogRecordProcessor(exporter))
@@ -220,7 +353,68 @@ class TestBatchLogRecordProcessor(ConcurrencyTestBase):
         logger.addHandler(LoggingHandler(logger_provider=provider))
 
         logger.error("error")
-        self.assertEqual(log_record_processor.emit.call_count, 1)
+        self.assertEqual(log_record_processor.on_emit.call_count, 1)
+        log_record_processor.shutdown()
+
+    def test_with_multiple_threads(self):  # pylint: disable=no-self-use
+        exporter = InMemoryLogExporter()
+        batch_processor = BatchLogRecordProcessor(
+            exporter,
+            max_queue_size=3000,
+            max_export_batch_size=50,
+            schedule_delay_millis=30000,
+            export_timeout_millis=500,
+        )
+
+        def bulk_emit(num_emit):
+            for _ in range(num_emit):
+                batch_processor.on_emit(EMPTY_LOG)
+
+        total_expected_logs = 0
+        with ThreadPoolExecutor(max_workers=69) as executor:
+            for num_logs_to_emit in range(1, 70):
+                executor.submit(bulk_emit, num_logs_to_emit)
+                total_expected_logs += num_logs_to_emit
+
+            executor.shutdown()
+
+        batch_processor.shutdown()
+        # Wait a bit for logs to flush.
+        time.sleep(2)
+        assert len(exporter.get_finished_logs()) == total_expected_logs
+
+    @mark.skipif(
+        version_info < (3, 10),
+        reason="assertNoLogs only exists in python 3.10+.",
+    )
+    def test_logging_lib_not_invoked_in_batch_log_record_emit(self):  # pylint: disable=no-self-use
+        # See https://github.com/open-telemetry/opentelemetry-python/issues/4261
+        exporter = Mock()
+        processor = BatchLogRecordProcessor(exporter)
+        logger_provider = LoggerProvider(
+            resource=SDKResource.create(
+                {
+                    "service.name": "shoppingcart",
+                    "service.instance.id": "instance-12",
+                }
+            ),
+        )
+        logger_provider.add_log_record_processor(processor)
+        handler = LoggingHandler(
+            level=logging.INFO, logger_provider=logger_provider
+        )
+        sdk_logger = logging.getLogger("opentelemetry.sdk")
+        # Attach OTLP handler to SDK logger
+        sdk_logger.addHandler(handler)
+        # If `emit` calls logging.log then this test will throw a maximum recursion depth exceeded exception and fail.
+        try:
+            with self.assertNoLogs(sdk_logger, logging.NOTSET):
+                processor.on_emit(EMPTY_LOG)
+            processor.shutdown()
+            with self.assertNoLogs(sdk_logger, logging.NOTSET):
+                processor.on_emit(EMPTY_LOG)
+        finally:
+            sdk_logger.removeHandler(handler)
 
     def test_args(self):
         exporter = InMemoryLogExporter()
@@ -231,11 +425,22 @@ class TestBatchLogRecordProcessor(ConcurrencyTestBase):
             max_export_batch_size=256,
             export_timeout_millis=15000,
         )
-        self.assertEqual(log_record_processor._exporter, exporter)
-        self.assertEqual(log_record_processor._max_queue_size, 1024)
-        self.assertEqual(log_record_processor._schedule_delay_millis, 2500)
-        self.assertEqual(log_record_processor._max_export_batch_size, 256)
-        self.assertEqual(log_record_processor._export_timeout_millis, 15000)
+        self.assertEqual(
+            log_record_processor._batch_processor._exporter, exporter
+        )
+        self.assertEqual(
+            log_record_processor._batch_processor._max_queue_size, 1024
+        )
+        self.assertEqual(
+            log_record_processor._batch_processor._schedule_delay, 2.5
+        )
+        self.assertEqual(
+            log_record_processor._batch_processor._max_export_batch_size, 256
+        )
+        self.assertEqual(
+            log_record_processor._batch_processor._export_timeout_millis, 15000
+        )
+        log_record_processor.shutdown()
 
     @patch.dict(
         "os.environ",
@@ -249,20 +454,42 @@ class TestBatchLogRecordProcessor(ConcurrencyTestBase):
     def test_env_vars(self):
         exporter = InMemoryLogExporter()
         log_record_processor = BatchLogRecordProcessor(exporter)
-        self.assertEqual(log_record_processor._exporter, exporter)
-        self.assertEqual(log_record_processor._max_queue_size, 1024)
-        self.assertEqual(log_record_processor._schedule_delay_millis, 2500)
-        self.assertEqual(log_record_processor._max_export_batch_size, 256)
-        self.assertEqual(log_record_processor._export_timeout_millis, 15000)
+        self.assertEqual(
+            log_record_processor._batch_processor._exporter, exporter
+        )
+        self.assertEqual(
+            log_record_processor._batch_processor._max_queue_size, 1024
+        )
+        self.assertEqual(
+            log_record_processor._batch_processor._schedule_delay, 2.5
+        )
+        self.assertEqual(
+            log_record_processor._batch_processor._max_export_batch_size, 256
+        )
+        self.assertEqual(
+            log_record_processor._batch_processor._export_timeout_millis, 15000
+        )
+        log_record_processor.shutdown()
 
     def test_args_defaults(self):
         exporter = InMemoryLogExporter()
         log_record_processor = BatchLogRecordProcessor(exporter)
-        self.assertEqual(log_record_processor._exporter, exporter)
-        self.assertEqual(log_record_processor._max_queue_size, 2048)
-        self.assertEqual(log_record_processor._schedule_delay_millis, 5000)
-        self.assertEqual(log_record_processor._max_export_batch_size, 512)
-        self.assertEqual(log_record_processor._export_timeout_millis, 30000)
+        self.assertEqual(
+            log_record_processor._batch_processor._exporter, exporter
+        )
+        self.assertEqual(
+            log_record_processor._batch_processor._max_queue_size, 2048
+        )
+        self.assertEqual(
+            log_record_processor._batch_processor._schedule_delay, 5
+        )
+        self.assertEqual(
+            log_record_processor._batch_processor._max_export_batch_size, 512
+        )
+        self.assertEqual(
+            log_record_processor._batch_processor._export_timeout_millis, 30000
+        )
+        log_record_processor.shutdown()
 
     @patch.dict(
         "os.environ",
@@ -278,11 +505,22 @@ class TestBatchLogRecordProcessor(ConcurrencyTestBase):
         _logger.disabled = True
         log_record_processor = BatchLogRecordProcessor(exporter)
         _logger.disabled = False
-        self.assertEqual(log_record_processor._exporter, exporter)
-        self.assertEqual(log_record_processor._max_queue_size, 2048)
-        self.assertEqual(log_record_processor._schedule_delay_millis, 5000)
-        self.assertEqual(log_record_processor._max_export_batch_size, 512)
-        self.assertEqual(log_record_processor._export_timeout_millis, 30000)
+        self.assertEqual(
+            log_record_processor._batch_processor._exporter, exporter
+        )
+        self.assertEqual(
+            log_record_processor._batch_processor._max_queue_size, 2048
+        )
+        self.assertEqual(
+            log_record_processor._batch_processor._schedule_delay, 5
+        )
+        self.assertEqual(
+            log_record_processor._batch_processor._max_export_batch_size, 512
+        )
+        self.assertEqual(
+            log_record_processor._batch_processor._export_timeout_millis, 30000
+        )
+        log_record_processor.shutdown()
 
     def test_args_none_defaults(self):
         exporter = InMemoryLogExporter()
@@ -293,11 +531,22 @@ class TestBatchLogRecordProcessor(ConcurrencyTestBase):
             max_export_batch_size=None,
             export_timeout_millis=None,
         )
-        self.assertEqual(log_record_processor._exporter, exporter)
-        self.assertEqual(log_record_processor._max_queue_size, 2048)
-        self.assertEqual(log_record_processor._schedule_delay_millis, 5000)
-        self.assertEqual(log_record_processor._max_export_batch_size, 512)
-        self.assertEqual(log_record_processor._export_timeout_millis, 30000)
+        self.assertEqual(
+            log_record_processor._batch_processor._exporter, exporter
+        )
+        self.assertEqual(
+            log_record_processor._batch_processor._max_queue_size, 2048
+        )
+        self.assertEqual(
+            log_record_processor._batch_processor._schedule_delay, 5
+        )
+        self.assertEqual(
+            log_record_processor._batch_processor._max_export_batch_size, 512
+        )
+        self.assertEqual(
+            log_record_processor._batch_processor._export_timeout_millis, 30000
+        )
+        log_record_processor.shutdown()
 
     def test_validation_negative_max_queue_size(self):
         exporter = InMemoryLogExporter()
@@ -345,163 +594,24 @@ class TestBatchLogRecordProcessor(ConcurrencyTestBase):
             max_export_batch_size=101,
         )
 
-    def test_shutdown(self):
-        exporter = InMemoryLogExporter()
-        log_record_processor = BatchLogRecordProcessor(exporter)
-
-        provider = LoggerProvider()
-        provider.add_log_record_processor(log_record_processor)
-
-        logger = logging.getLogger("shutdown")
-        logger.addHandler(LoggingHandler(logger_provider=provider))
-
-        with self.assertLogs(level=logging.WARNING):
-            logger.warning("warning message: %s", "possible upcoming heatwave")
-        with self.assertLogs(level=logging.WARNING):
-            logger.error("Very high rise in temperatures across the globe")
-        with self.assertLogs(level=logging.WARNING):
-            logger.critical("Temperature hits high 420 C in Hyderabad")
-
-        log_record_processor.shutdown()
-        self.assertTrue(exporter._stopped)
-
-        finished_logs = exporter.get_finished_logs()
-        expected = [
-            ("warning message: possible upcoming heatwave", "WARN"),
-            ("Very high rise in temperatures across the globe", "ERROR"),
-            (
-                "Temperature hits high 420 C in Hyderabad",
-                "CRITICAL",
-            ),
-        ]
-        emitted = [
-            (item.log_record.body, item.log_record.severity_text)
-            for item in finished_logs
-        ]
-        self.assertEqual(expected, emitted)
-
-    def test_force_flush(self):
-        exporter = InMemoryLogExporter()
-        log_record_processor = BatchLogRecordProcessor(exporter)
-
-        provider = LoggerProvider()
-        provider.add_log_record_processor(log_record_processor)
-
-        logger = logging.getLogger("force_flush")
-        logger.propagate = False
-        logger.addHandler(LoggingHandler(logger_provider=provider))
-
-        logger.critical("Earth is burning")
-        log_record_processor.force_flush()
-        finished_logs = exporter.get_finished_logs()
-        self.assertEqual(len(finished_logs), 1)
-        log_record = finished_logs[0].log_record
-        self.assertEqual(log_record.body, "Earth is burning")
-        self.assertEqual(log_record.severity_number, SeverityNumber.FATAL)
-
-    def test_log_record_processor_too_many_logs(self):
-        exporter = InMemoryLogExporter()
-        log_record_processor = BatchLogRecordProcessor(exporter)
-
-        provider = LoggerProvider()
-        provider.add_log_record_processor(log_record_processor)
-
-        logger = logging.getLogger("many_logs")
-        logger.propagate = False
-        logger.addHandler(LoggingHandler(logger_provider=provider))
-
-        for log_no in range(1000):
-            logger.critical("Log no: %s", log_no)
-
-        self.assertTrue(log_record_processor.force_flush())
-        finised_logs = exporter.get_finished_logs()
-        self.assertEqual(len(finised_logs), 1000)
-
-    def test_with_multiple_threads(self):
-        exporter = InMemoryLogExporter()
-        log_record_processor = BatchLogRecordProcessor(exporter)
-
-        provider = LoggerProvider()
-        provider.add_log_record_processor(log_record_processor)
-
-        logger = logging.getLogger("threads")
-        logger.propagate = False
-        logger.addHandler(LoggingHandler(logger_provider=provider))
-
-        def bulk_log_and_flush(num_logs):
-            for _ in range(num_logs):
-                logger.critical("Critical message")
-            self.assertTrue(log_record_processor.force_flush())
-
-        with ThreadPoolExecutor(max_workers=69) as executor:
-            futures = []
-            for idx in range(69):
-                future = executor.submit(bulk_log_and_flush, idx + 1)
-                futures.append(future)
-
-            executor.shutdown()
-
-        finished_logs = exporter.get_finished_logs()
-        self.assertEqual(len(finished_logs), 2415)
-
-    @unittest.skipUnless(
-        hasattr(os, "fork"),
-        "needs *nix",
-    )
-    def test_batch_log_record_processor_fork(self):
-        # pylint: disable=invalid-name
-        exporter = InMemoryLogExporter()
-        log_record_processor = BatchLogRecordProcessor(
-            exporter,
-            max_export_batch_size=64,
-            schedule_delay_millis=10,
-        )
-        provider = LoggerProvider()
-        provider.add_log_record_processor(log_record_processor)
-
-        logger = logging.getLogger("test-fork")
-        logger.propagate = False
-        logger.addHandler(LoggingHandler(logger_provider=provider))
-
-        logger.critical("yolo")
-        time.sleep(0.5)  # give some time for the exporter to upload
-
-        self.assertTrue(log_record_processor.force_flush())
-        self.assertEqual(len(exporter.get_finished_logs()), 1)
-        exporter.clear()
-
-        multiprocessing.set_start_method("fork")
-
-        def child(conn):
-            def _target():
-                logger.critical("Critical message child")
-
-            self.run_with_many_threads(_target, 100)
-
-            time.sleep(0.5)
-
-            logs = exporter.get_finished_logs()
-            conn.send(len(logs) == 100)
-            conn.close()
-
-        parent_conn, child_conn = multiprocessing.Pipe()
-        p = multiprocessing.Process(target=child, args=(child_conn,))
-        p.start()
-        self.assertTrue(parent_conn.recv())
-        p.join()
-
-        log_record_processor.shutdown()
-
 
 class TestConsoleLogExporter(unittest.TestCase):
     def test_export(self):  # pylint: disable=no-self-use
         """Check that the console exporter prints log records."""
+        ctx = set_span_in_context(
+            NonRecordingSpan(
+                SpanContext(
+                    2604504634922341076776623263868986797,
+                    5213367945872657620,
+                    False,
+                    TraceFlags(0x01),
+                )
+            )
+        )
         log_data = LogData(
             log_record=LogRecord(
                 timestamp=int(time.time() * 1e9),
-                trace_id=2604504634922341076776623263868986797,
-                span_id=5213367945872657620,
-                trace_flags=TraceFlags(0x01),
+                context=ctx,
                 severity_text="WARN",
                 severity_number=SeverityNumber.WARN,
                 body="Zhengzhou, We have a heaviest rains in 1000 years",
@@ -534,11 +644,6 @@ class TestConsoleLogExporter(unittest.TestCase):
 
         mock_stdout = Mock()
         exporter = ConsoleLogExporter(out=mock_stdout, formatter=formatter)
-        log_data = LogData(
-            log_record=LogRecord(),
-            instrumentation_scope=InstrumentationScope(
-                "first_name", "first_version"
-            ),
-        )
-        exporter.export([log_data])
+        exporter.export([EMPTY_LOG])
+
         mock_stdout.write.assert_called_once_with(mock_record_str)

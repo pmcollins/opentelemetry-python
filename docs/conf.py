@@ -115,6 +115,49 @@ nitpick_ignore = [
         "py:class",
         "opentelemetry.trace._LinkBase",
     ),
+    (
+        "py:class",
+        "opentelemetry.exporter.otlp.proto.grpc.exporter.OTLPExporterMixin",
+    ),
+    (
+        "py:class",
+        "opentelemetry.proto.collector.trace.v1.trace_service_pb2.ExportTraceServiceRequest",
+    ),
+    (
+        "py:class",
+        "opentelemetry.exporter.otlp.proto.common._internal.metrics_encoder.OTLPMetricExporterMixin",
+    ),
+    ("py:class", "opentelemetry.proto.resource.v1.resource_pb2.Resource"),
+    (
+        "py:class",
+        "opentelemetry.proto.collector.metrics.v1.metrics_service_pb2.ExportMetricsServiceRequest",
+    ),
+    ("py:class", "opentelemetry.sdk._logs._internal.export.LogExporter"),
+    ("py:class", "opentelemetry.sdk._logs._internal.export.LogExportResult"),
+    (
+        "py:class",
+        "opentelemetry.proto.collector.logs.v1.logs_service_pb2.ExportLogsServiceRequest",
+    ),
+    (
+        "py:class",
+        "opentelemetry.sdk.metrics._internal.exemplar.exemplar_reservoir.FixedSizeExemplarReservoirABC",
+    ),
+    (
+        "py:class",
+        "opentelemetry.sdk.metrics._internal.exemplar.exemplar.Exemplar",
+    ),
+    (
+        "py:class",
+        "opentelemetry.sdk.metrics._internal.aggregation._Aggregation",
+    ),
+    (
+        "py:class",
+        "_contextvars.Token",
+    ),
+    (
+        "py:class",
+        "AnyValue",
+    ),
 ]
 
 # Add any paths that contain templates here, relative to this directory.
@@ -169,9 +212,7 @@ rst_epilog = """
 .. |SCM_WEB| replace:: {s}
 .. |SCM_RAW_WEB| replace:: {sr}
 .. |SCM_BRANCH| replace:: {b}
-""".format(
-    s=scm_web, sr=scm_raw_web, b=branch
-)
+""".format(s=scm_web, sr=scm_raw_web, b=branch)
 
 # used to have links to repo files
 extlinks = {

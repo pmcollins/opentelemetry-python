@@ -11,9 +11,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from __future__ import annotations
 
 import math
 import os
+import weakref
 from abc import ABC, abstractmethod
 from enum import Enum
 from logging import getLogger
@@ -21,7 +23,7 @@ from os import environ, linesep
 from sys import stdout
 from threading import Event, Lock, RLock, Thread
 from time import time_ns
-from typing import IO, Callable, Dict, Iterable, Optional
+from typing import IO, Callable, Iterable, Optional
 
 from typing_extensions import final
 
@@ -90,10 +92,12 @@ class MetricExporter(ABC):
 
     def __init__(
         self,
-        preferred_temporality: Dict[type, AggregationTemporality] = None,
-        preferred_aggregation: Dict[
+        preferred_temporality: dict[type, AggregationTemporality]
+        | None = None,
+        preferred_aggregation: dict[
             type, "opentelemetry.sdk.metrics.view.Aggregation"
-        ] = None,
+        ]
+        | None = None,
     ) -> None:
         self._preferred_temporality = preferred_temporality
         self._preferred_aggregation = preferred_aggregation
@@ -142,12 +146,13 @@ class ConsoleMetricExporter(MetricExporter):
         out: IO = stdout,
         formatter: Callable[
             ["opentelemetry.sdk.metrics.export.MetricsData"], str
-        ] = lambda metrics_data: metrics_data.to_json()
-        + linesep,
-        preferred_temporality: Dict[type, AggregationTemporality] = None,
-        preferred_aggregation: Dict[
+        ] = lambda metrics_data: metrics_data.to_json() + linesep,
+        preferred_temporality: dict[type, AggregationTemporality]
+        | None = None,
+        preferred_aggregation: dict[
             type, "opentelemetry.sdk.metrics.view.Aggregation"
-        ] = None,
+        ]
+        | None = None,
     ):
         super().__init__(
             preferred_temporality=preferred_temporality,
@@ -174,7 +179,7 @@ class ConsoleMetricExporter(MetricExporter):
 
 
 class MetricReader(ABC):
-    # pylint: disable=too-many-branches
+    # pylint: disable=too-many-branches,broad-exception-raised
     """
     Base class for all metric readers
 
@@ -209,10 +214,12 @@ class MetricReader(ABC):
 
     def __init__(
         self,
-        preferred_temporality: Dict[type, AggregationTemporality] = None,
-        preferred_aggregation: Dict[
+        preferred_temporality: dict[type, AggregationTemporality]
+        | None = None,
+        preferred_aggregation: dict[
             type, "opentelemetry.sdk.metrics.view.Aggregation"
-        ] = None,
+        ]
+        | None = None,
     ) -> None:
         self._collect: Callable[
             [
@@ -247,27 +254,27 @@ class MetricReader(ABC):
                 if typ is Counter:
                     self._instrument_class_temporality[_Counter] = temporality
                 elif typ is UpDownCounter:
-                    self._instrument_class_temporality[
-                        _UpDownCounter
-                    ] = temporality
+                    self._instrument_class_temporality[_UpDownCounter] = (
+                        temporality
+                    )
                 elif typ is Histogram:
-                    self._instrument_class_temporality[
-                        _Histogram
-                    ] = temporality
+                    self._instrument_class_temporality[_Histogram] = (
+                        temporality
+                    )
                 elif typ is Gauge:
                     self._instrument_class_temporality[_Gauge] = temporality
                 elif typ is ObservableCounter:
-                    self._instrument_class_temporality[
-                        _ObservableCounter
-                    ] = temporality
+                    self._instrument_class_temporality[_ObservableCounter] = (
+                        temporality
+                    )
                 elif typ is ObservableUpDownCounter:
                     self._instrument_class_temporality[
                         _ObservableUpDownCounter
                     ] = temporality
                 elif typ is ObservableGauge:
-                    self._instrument_class_temporality[
-                        _ObservableGauge
-                    ] = temporality
+                    self._instrument_class_temporality[_ObservableGauge] = (
+                        temporality
+                    )
                 else:
                     raise Exception(f"Invalid instrument class found {typ}")
 
@@ -287,27 +294,27 @@ class MetricReader(ABC):
                 if typ is Counter:
                     self._instrument_class_aggregation[_Counter] = aggregation
                 elif typ is UpDownCounter:
-                    self._instrument_class_aggregation[
-                        _UpDownCounter
-                    ] = aggregation
+                    self._instrument_class_aggregation[_UpDownCounter] = (
+                        aggregation
+                    )
                 elif typ is Histogram:
-                    self._instrument_class_aggregation[
-                        _Histogram
-                    ] = aggregation
+                    self._instrument_class_aggregation[_Histogram] = (
+                        aggregation
+                    )
                 elif typ is Gauge:
                     self._instrument_class_aggregation[_Gauge] = aggregation
                 elif typ is ObservableCounter:
-                    self._instrument_class_aggregation[
-                        _ObservableCounter
-                    ] = aggregation
+                    self._instrument_class_aggregation[_ObservableCounter] = (
+                        aggregation
+                    )
                 elif typ is ObservableUpDownCounter:
                     self._instrument_class_aggregation[
                         _ObservableUpDownCounter
                     ] = aggregation
                 elif typ is ObservableGauge:
-                    self._instrument_class_aggregation[
-                        _ObservableGauge
-                    ] = aggregation
+                    self._instrument_class_aggregation[_ObservableGauge] = (
+                        aggregation
+                    )
                 else:
                     raise Exception(f"Invalid instrument class found {typ}")
 
@@ -333,7 +340,6 @@ class MetricReader(ABC):
         metrics = self._collect(self, timeout_millis=timeout_millis)
 
         if metrics is not None:
-
             self._receive_metrics(
                 metrics,
                 timeout_millis=timeout_millis,
@@ -388,23 +394,25 @@ class InMemoryMetricReader(MetricReader):
 
     def __init__(
         self,
-        preferred_temporality: Dict[type, AggregationTemporality] = None,
-        preferred_aggregation: Dict[
+        preferred_temporality: dict[type, AggregationTemporality]
+        | None = None,
+        preferred_aggregation: dict[
             type, "opentelemetry.sdk.metrics.view.Aggregation"
-        ] = None,
+        ]
+        | None = None,
     ) -> None:
         super().__init__(
             preferred_temporality=preferred_temporality,
             preferred_aggregation=preferred_aggregation,
         )
         self._lock = RLock()
-        self._metrics_data: (
-            "opentelemetry.sdk.metrics.export.MetricsData"
-        ) = None
+        self._metrics_data: "opentelemetry.sdk.metrics.export.MetricsData" = (
+            None
+        )
 
     def get_metrics_data(
         self,
-    ) -> ("opentelemetry.sdk.metrics.export.MetricsData"):
+    ) -> Optional["opentelemetry.sdk.metrics.export.MetricsData"]:
         """Reads and returns current metrics from the SDK"""
         with self._lock:
             self.collect()
@@ -490,9 +498,11 @@ class PeriodicExportingMetricReader(MetricReader):
             )
             self._daemon_thread.start()
             if hasattr(os, "register_at_fork"):
+                weak_at_fork = weakref.WeakMethod(self._at_fork_reinit)
+
                 os.register_at_fork(
-                    after_in_child=self._at_fork_reinit
-                )  # pylint: disable=protected-access
+                    after_in_child=lambda: weak_at_fork()()  # pylint: disable=unnecessary-lambda
+                )
         elif self._export_interval_millis <= 0:
             raise ValueError(
                 f"interval value {self._export_interval_millis} is invalid \
@@ -519,7 +529,13 @@ class PeriodicExportingMetricReader(MetricReader):
                     exc_info=True,
                 )
         # one last collection below before shutting down completely
-        self.collect(timeout_millis=self._export_interval_millis)
+        try:
+            self.collect(timeout_millis=self._export_interval_millis)
+        except MetricsTimeoutError:
+            _logger.warning(
+                "Metric collection timed out.",
+                exc_info=True,
+            )
 
     def _receive_metrics(
         self,
@@ -527,15 +543,15 @@ class PeriodicExportingMetricReader(MetricReader):
         timeout_millis: float = 10_000,
         **kwargs,
     ) -> None:
-
         token = attach(set_value(_SUPPRESS_INSTRUMENTATION_KEY, True))
+        # pylint: disable=broad-exception-caught,invalid-name
         try:
             with self._export_lock:
                 self._exporter.export(
                     metrics_data, timeout_millis=timeout_millis
                 )
-        except Exception as e:  # pylint: disable=broad-except,invalid-name
-            _logger.exception("Exception while exporting metrics %s", str(e))
+        except Exception:
+            _logger.exception("Exception while exporting metrics")
         detach(token)
 
     def shutdown(self, timeout_millis: float = 30_000, **kwargs) -> None:
@@ -551,9 +567,7 @@ class PeriodicExportingMetricReader(MetricReader):
 
         self._shutdown_event.set()
         if self._daemon_thread:
-            self._daemon_thread.join(
-                timeout=(deadline_ns - time_ns()) / 10**9
-            )
+            self._daemon_thread.join(timeout=(deadline_ns - time_ns()) / 10**9)
         self._exporter.shutdown(timeout=(deadline_ns - time_ns()) / 10**6)
 
     def force_flush(self, timeout_millis: float = 10_000) -> bool:

@@ -12,11 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from math import inf
-from sys import float_info, version_info
-from unittest.mock import patch
+# pylint: disable=protected-access
 
-from pytest import mark
+from math import inf, nextafter
+from sys import float_info
+from unittest.mock import patch
 
 from opentelemetry.sdk.metrics._internal.exponential_histogram.mapping.errors import (
     MappingUnderflowError,
@@ -32,9 +32,6 @@ from opentelemetry.sdk.metrics._internal.exponential_histogram.mapping.ieee_754 
 )
 from opentelemetry.test import TestCase
 
-if version_info >= (3, 9):
-    from math import nextafter
-
 
 def right_boundary(scale: int, index: int) -> float:
     result = 2**index
@@ -47,7 +44,6 @@ def right_boundary(scale: int, index: int) -> float:
 
 class TestExponentMapping(TestCase):
     def test_singleton(self):
-
         self.assertIs(ExponentMapping(-3), ExponentMapping(-3))
         self.assertIsNot(ExponentMapping(-3), ExponentMapping(-5))
 
@@ -60,20 +56,17 @@ class TestExponentMapping(TestCase):
         "opentelemetry.sdk.metrics._internal.exponential_histogram.mapping."
         "exponent_mapping.ExponentMapping._init"
     )
-    def test_init_called_once(self, mock_init):
-
+    def test_init_called_once(self, mock_init):  # pylint: disable=no-self-use
         ExponentMapping(-3)
         ExponentMapping(-3)
 
         mock_init.assert_called_once()
 
     def test_exponent_mapping_0(self):
-
         with self.assertNotRaises(Exception):
             ExponentMapping(0)
 
     def test_exponent_mapping_zero(self):
-
         exponent_mapping = ExponentMapping(0)
 
         # This is the equivalent to 1.1 in hexadecimal
@@ -133,7 +126,6 @@ class TestExponentMapping(TestCase):
         )
 
     def test_exponent_mapping_min_scale(self):
-
         exponent_mapping = ExponentMapping(ExponentMapping._min_scale)
         self.assertEqual(exponent_mapping.map_to_index(1.000001), 0)
         self.assertEqual(exponent_mapping.map_to_index(1), -1)
@@ -171,6 +163,7 @@ class TestExponentMapping(TestCase):
         self.assertEqual(exponent_mapping.map_to_index(0.06), -3)
 
     def test_exponent_mapping_neg_four(self):
+        # pylint: disable=too-many-statements
         exponent_mapping = ExponentMapping(-4)
         self.assertEqual(exponent_mapping.map_to_index(float(0x1)), -1)
         self.assertEqual(exponent_mapping.map_to_index(float(0x10)), 0)
@@ -306,7 +299,6 @@ class TestExponentMapping(TestCase):
         self.assertEqual(exponent_mapping.map_to_index(2**-975), -61)
 
     def test_exponent_index_max(self):
-
         for scale in range(
             ExponentMapping._min_scale, ExponentMapping._max_scale
         ):
@@ -325,10 +317,6 @@ class TestExponentMapping(TestCase):
             with self.assertRaises(Exception):
                 exponent_mapping.get_lower_boundary(index + 1)
 
-    @mark.skipif(
-        version_info < (3, 9),
-        reason="math.nextafter is only available for Python >= 3.9",
-    )
     def test_exponent_index_min(self):
         for scale in range(
             ExponentMapping._min_scale, ExponentMapping._max_scale + 1
@@ -386,7 +374,9 @@ class TestExponentMapping(TestCase):
 
             self.assertEqual(
                 exponent_mapping.map_to_index(
-                    nextafter(MIN_NORMAL_VALUE, inf)
+                    nextafter(  # pylint: disable=possibly-used-before-assignment
+                        MIN_NORMAL_VALUE, inf
+                    )
                 ),
                 MIN_NORMAL_EXPONENT >> -scale,
             )

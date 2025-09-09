@@ -73,7 +73,6 @@ either implicit or explicit context propagation consistently throughout.
     `set_tracer_provider`.
 """
 
-
 import os
 import typing
 from abc import ABC, abstractmethod
@@ -81,9 +80,10 @@ from enum import Enum
 from logging import getLogger
 from typing import Iterator, Optional, Sequence, cast
 
-from deprecated import deprecated
+from typing_extensions import deprecated
 
 from opentelemetry import context as context_api
+from opentelemetry.attributes import BoundedAttributes
 from opentelemetry.context.context import Context
 from opentelemetry.environment_variables import OTEL_PYTHON_TRACER_PROVIDER
 from opentelemetry.trace.propagation import (
@@ -149,6 +149,12 @@ class Link(_LinkBase):
     def attributes(self) -> types.Attributes:
         return self._attributes
 
+    @property
+    def dropped_attributes(self) -> int:
+        if isinstance(self._attributes, BoundedAttributes):
+            return self._attributes.dropped
+        return 0
+
 
 _Links = Optional[Sequence[Link]]
 
@@ -189,6 +195,7 @@ class TracerProvider(ABC):
         instrumenting_module_name: str,
         instrumenting_library_version: typing.Optional[str] = None,
         schema_url: typing.Optional[str] = None,
+        attributes: typing.Optional[types.Attributes] = None,
     ) -> "Tracer":
         """Returns a `Tracer` for use by the given instrumentation library.
 
@@ -216,6 +223,7 @@ class TracerProvider(ABC):
                 ``importlib.metadata.version(instrumenting_library_name)``.
 
             schema_url: Optional. Specifies the Schema URL of the emitted telemetry.
+            attributes: Optional. Specifies the attributes of the emitted telemetry.
         """
 
 
@@ -230,12 +238,15 @@ class NoOpTracerProvider(TracerProvider):
         instrumenting_module_name: str,
         instrumenting_library_version: typing.Optional[str] = None,
         schema_url: typing.Optional[str] = None,
+        attributes: typing.Optional[types.Attributes] = None,
     ) -> "Tracer":
         # pylint:disable=no-self-use,unused-argument
         return NoOpTracer()
 
 
-@deprecated(version="1.9.0", reason="You should use NoOpTracerProvider")  # type: ignore
+@deprecated(
+    "You should use NoOpTracerProvider. Deprecated since version 1.9.0."
+)
 class _DefaultTracerProvider(NoOpTracerProvider):
     """The default TracerProvider, used when no implementation is available.
 
@@ -249,17 +260,20 @@ class ProxyTracerProvider(TracerProvider):
         instrumenting_module_name: str,
         instrumenting_library_version: typing.Optional[str] = None,
         schema_url: typing.Optional[str] = None,
+        attributes: typing.Optional[types.Attributes] = None,
     ) -> "Tracer":
         if _TRACER_PROVIDER:
             return _TRACER_PROVIDER.get_tracer(
                 instrumenting_module_name,
                 instrumenting_library_version,
                 schema_url,
+                attributes,
             )
         return ProxyTracer(
             instrumenting_module_name,
             instrumenting_library_version,
             schema_url,
+            attributes,
         )
 
 
@@ -407,10 +421,12 @@ class ProxyTracer(Tracer):
         instrumenting_module_name: str,
         instrumenting_library_version: typing.Optional[str] = None,
         schema_url: typing.Optional[str] = None,
+        attributes: typing.Optional[types.Attributes] = None,
     ):
         self._instrumenting_module_name = instrumenting_module_name
         self._instrumenting_library_version = instrumenting_library_version
         self._schema_url = schema_url
+        self._attributes = attributes
         self._real_tracer: Optional[Tracer] = None
         self._noop_tracer = NoOpTracer()
 
@@ -424,6 +440,7 @@ class ProxyTracer(Tracer):
                 self._instrumenting_module_name,
                 self._instrumenting_library_version,
                 self._schema_url,
+                self._attributes,
             )
             return self._real_tracer
         return self._noop_tracer
@@ -454,7 +471,6 @@ class NoOpTracer(Tracer):
         record_exception: bool = True,
         set_status_on_exception: bool = True,
     ) -> "Span":
-        # pylint: disable=unused-argument,no-self-use
         return INVALID_SPAN
 
     @_agnosticcontextmanager
@@ -470,11 +486,10 @@ class NoOpTracer(Tracer):
         set_status_on_exception: bool = True,
         end_on_exit: bool = True,
     ) -> Iterator["Span"]:
-        # pylint: disable=unused-argument,no-self-use
         yield INVALID_SPAN
 
 
-@deprecated(version="1.9.0", reason="You should use NoOpTracer")  # type: ignore
+@deprecated("You should use NoOpTracer. Deprecated since version 1.9.0.")
 class _DefaultTracer(NoOpTracer):
     """The default Tracer, used when no Tracer implementation is available.
 
@@ -492,6 +507,7 @@ def get_tracer(
     instrumenting_library_version: typing.Optional[str] = None,
     tracer_provider: Optional[TracerProvider] = None,
     schema_url: typing.Optional[str] = None,
+    attributes: typing.Optional[types.Attributes] = None,
 ) -> "Tracer":
     """Returns a `Tracer` for use by the given instrumentation library.
 
@@ -503,7 +519,10 @@ def get_tracer(
     if tracer_provider is None:
         tracer_provider = get_tracer_provider()
     return tracer_provider.get_tracer(
-        instrumenting_module_name, instrumenting_library_version, schema_url
+        instrumenting_module_name,
+        instrumenting_library_version,
+        schema_url,
+        attributes,
     )
 
 
@@ -571,7 +590,10 @@ def use_span(
         finally:
             context_api.detach(token)
 
-    except Exception as exc:  # pylint: disable=broad-except
+    # Record only exceptions that inherit Exception class but not BaseException, because
+    # classes that directly inherit BaseException are not technically errors, e.g. GeneratorExit.
+    # See https://github.com/open-telemetry/opentelemetry-python/issues/4484
+    except Exception as exc:  # pylint: disable=broad-exception-caught
         if isinstance(span, Span) and span.is_recording():
             # Record the exception as an event
             if record_exception:

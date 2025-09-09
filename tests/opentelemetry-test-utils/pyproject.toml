@@ -7,32 +7,35 @@ name = "opentelemetry-test-utils"
 dynamic = ["version"]
 description = "Test utilities for OpenTelemetry unit tests"
 readme = "README.rst"
-license = {text = "Apache-2.0"}
-requires-python = ">=3.8"
+license = "Apache-2.0"
+requires-python = ">=3.9"
 authors = [
   { name = "OpenTelemetry Authors", email = "cncf-opentelemetry-contributors@lists.cncf.io" },
 ]
 classifiers = [
   "Development Status :: 4 - Beta",
+  "Framework :: OpenTelemetry",
   "Intended Audience :: Developers",
-  "License :: OSI Approved :: Apache Software License",
   "Programming Language :: Python",
   "Programming Language :: Python :: 3",
-  "Programming Language :: Python :: 3.8",
   "Programming Language :: Python :: 3.9",
   "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
 ]
 dependencies = [
   "asgiref ~= 3.0",
-  "opentelemetry-api == 1.25.0.dev",
-  "opentelemetry-sdk == 1.25.0.dev",
+  "opentelemetry-api == 1.37.0.dev",
+  "opentelemetry-sdk == 1.37.0.dev",
 ]
 
 [project.urls]
 Homepage = "https://github.com/open-telemetry/opentelemetry-python/tests/opentelemetry-test-utils"
+Repository = "https://github.com/open-telemetry/opentelemetry-python"
 
 [tool.hatch.version]
-path = "src/opentelemetry/test/version.py"
+path = "src/opentelemetry/test/version/__init__.py"
 
 [tool.hatch.build.targets.sdist]
 include = [

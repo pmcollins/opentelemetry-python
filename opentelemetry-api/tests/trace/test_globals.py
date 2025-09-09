@@ -1,3 +1,17 @@
+# Copyright The OpenTelemetry Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import unittest
 from unittest.mock import Mock, patch
 
@@ -7,13 +21,18 @@ from opentelemetry.test.globals_test import TraceGlobalsTest
 from opentelemetry.trace.status import Status, StatusCode
 
 
-class TestSpan(trace.NonRecordingSpan):
+class SpanTest(trace.NonRecordingSpan):
     has_ended = False
     recorded_exception = None
     recorded_status = Status(status_code=StatusCode.UNSET)
 
     def set_status(self, status, description=None):
-        self.recorded_status = status
+        if isinstance(status, Status):
+            self.recorded_status = status
+        else:
+            self.recorded_status = Status(
+                status_code=status, description=description
+            )
 
     def end(self, end_time=None):
         self.has_ended = True
@@ -33,10 +52,12 @@ class TestGlobals(TraceGlobalsTest, unittest.TestCase):
     def test_get_tracer(mock_tracer_provider):  # type: ignore
         """trace.get_tracer should proxy to the global tracer provider."""
         trace.get_tracer("foo", "var")
-        mock_tracer_provider.get_tracer.assert_called_with("foo", "var", None)
+        mock_tracer_provider.get_tracer.assert_called_with(
+            "foo", "var", None, None
+        )
         mock_provider = Mock()
         trace.get_tracer("foo", "var", mock_provider)
-        mock_provider.get_tracer.assert_called_with("foo", "var", None)
+        mock_provider.get_tracer.assert_called_with("foo", "var", None, None)
 
 
 class TestGlobalsConcurrency(TraceGlobalsTest, ConcurrencyTestBase):
@@ -109,8 +130,7 @@ class TestUseTracer(unittest.TestCase):
         self.assertEqual(trace.get_current_span(), trace.INVALID_SPAN)
 
     def test_use_span_end_on_exit(self):
-
-        test_span = TestSpan(trace.INVALID_SPAN_CONTEXT)
+        test_span = SpanTest(trace.INVALID_SPAN_CONTEXT)
 
         with trace.use_span(test_span):
             pass
@@ -124,7 +144,7 @@ class TestUseTracer(unittest.TestCase):
         class TestUseSpanException(Exception):
             pass
 
-        test_span = TestSpan(trace.INVALID_SPAN_CONTEXT)
+        test_span = SpanTest(trace.INVALID_SPAN_CONTEXT)
         exception = TestUseSpanException("test exception")
         with self.assertRaises(TestUseSpanException):
             with trace.use_span(test_span):
@@ -136,15 +156,39 @@ class TestUseTracer(unittest.TestCase):
         class TestUseSpanException(Exception):
             pass
 
-        test_span = TestSpan(trace.INVALID_SPAN_CONTEXT)
+        test_span = SpanTest(trace.INVALID_SPAN_CONTEXT)
         with self.assertRaises(TestUseSpanException):
             with trace.use_span(test_span):
                 raise TestUseSpanException("test error")
 
         self.assertEqual(
-            test_span.recorded_status.status_code, StatusCode.ERROR
+            test_span.recorded_status.status_code,
+            StatusCode.ERROR,
         )
         self.assertEqual(
             test_span.recorded_status.description,
             "TestUseSpanException: test error",
         )
+
+    def test_use_span_base_exceptions(self):
+        base_exception_classes = [
+            BaseException,
+            GeneratorExit,
+            SystemExit,
+            KeyboardInterrupt,
+        ]
+
+        for exc_cls in base_exception_classes:
+            with self.subTest(exc=exc_cls.__name__):
+                test_span = SpanTest(trace.INVALID_SPAN_CONTEXT)
+
+                with self.assertRaises(exc_cls):
+                    with trace.use_span(test_span):
+                        raise exc_cls()
+
+                self.assertEqual(
+                    test_span.recorded_status.status_code,
+                    StatusCode.UNSET,
+                )
+                self.assertIsNone(test_span.recorded_status.description)
+                self.assertIsNone(test_span.recorded_exception)

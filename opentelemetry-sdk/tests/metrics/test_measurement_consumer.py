@@ -12,7 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from sys import version_info
+# pylint: disable=invalid-name,no-self-use
+
 from time import sleep
 from unittest import TestCase
 from unittest.mock import MagicMock, Mock, patch
@@ -32,7 +33,6 @@ from opentelemetry.sdk.metrics._internal.sdk_configuration import (
 )
 class TestSynchronousMeasurementConsumer(TestCase):
     def test_parent(self, _):
-
         self.assertIsInstance(
             SynchronousMeasurementConsumer(MagicMock()), MeasurementConsumer
         )
@@ -42,6 +42,7 @@ class TestSynchronousMeasurementConsumer(TestCase):
         reader_mocks = [Mock() for _ in range(5)]
         SynchronousMeasurementConsumer(
             SdkConfiguration(
+                exemplar_filter=Mock(),
                 resource=Mock(),
                 metric_readers=reader_mocks,
                 views=Mock(),
@@ -58,6 +59,7 @@ class TestSynchronousMeasurementConsumer(TestCase):
 
         consumer = SynchronousMeasurementConsumer(
             SdkConfiguration(
+                exemplar_filter=Mock(should_sample=Mock(return_value=False)),
                 resource=Mock(),
                 metric_readers=reader_mocks,
                 views=Mock(),
@@ -68,7 +70,7 @@ class TestSynchronousMeasurementConsumer(TestCase):
 
         for rs_mock in reader_storage_mocks:
             rs_mock.consume_measurement.assert_called_once_with(
-                measurement_mock
+                measurement_mock, False
             )
 
     def test_collect_passed_to_reader_stage(self, MockMetricReaderStorage):
@@ -79,6 +81,7 @@ class TestSynchronousMeasurementConsumer(TestCase):
 
         consumer = SynchronousMeasurementConsumer(
             SdkConfiguration(
+                exemplar_filter=Mock(),
                 resource=Mock(),
                 metric_readers=reader_mocks,
                 views=Mock(),
@@ -97,6 +100,7 @@ class TestSynchronousMeasurementConsumer(TestCase):
         MockMetricReaderStorage.return_value = reader_storage_mock
         consumer = SynchronousMeasurementConsumer(
             SdkConfiguration(
+                exemplar_filter=Mock(should_sample=Mock(return_value=False)),
                 resource=Mock(),
                 metric_readers=[reader_mock],
                 views=Mock(),
@@ -117,6 +121,9 @@ class TestSynchronousMeasurementConsumer(TestCase):
         self.assertEqual(
             len(reader_storage_mock.consume_measurement.mock_calls), 5
         )
+        # assert consume_measurement was called with at least 2 arguments the second
+        # matching the mocked exemplar filter
+        self.assertFalse(reader_storage_mock.consume_measurement.call_args[1])
 
     def test_collect_timeout(self, MockMetricReaderStorage):
         reader_mock = Mock()
@@ -124,6 +131,7 @@ class TestSynchronousMeasurementConsumer(TestCase):
         MockMetricReaderStorage.return_value = reader_storage_mock
         consumer = SynchronousMeasurementConsumer(
             SdkConfiguration(
+                exemplar_filter=Mock(),
                 resource=Mock(),
                 metric_readers=[reader_mock],
                 views=Mock(),
@@ -156,6 +164,7 @@ class TestSynchronousMeasurementConsumer(TestCase):
         MockMetricReaderStorage.return_value = reader_storage_mock
         consumer = SynchronousMeasurementConsumer(
             SdkConfiguration(
+                exemplar_filter=Mock(),
                 resource=Mock(),
                 metric_readers=[reader_mock],
                 views=Mock(),
@@ -175,16 +184,11 @@ class TestSynchronousMeasurementConsumer(TestCase):
 
         consumer.collect(reader_mock)
 
-        if version_info < (3, 8):
-            callback_options_time_call = mock_callback_options.mock_calls[-1][
-                2
-            ]["timeout_millis"]
-        else:
-            callback_options_time_call = mock_callback_options.mock_calls[
-                -1
-            ].kwargs["timeout_millis"]
+        callback_options_time_call = mock_callback_options.mock_calls[
+            -1
+        ].kwargs["timeout_millis"]
 
         self.assertLess(
             callback_options_time_call,
-            10000 * 10**6,
+            10000,
         )

@@ -11,23 +11,25 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from __future__ import annotations
+
 from dataclasses import replace
 from logging import getLogger
 from os import environ
-from typing import Dict, Iterable, List, Optional, Tuple, Union
+from typing import Iterable, List, Tuple, Union
 from typing import Sequence as TypingSequence
-from grpc import ChannelCredentials, Compression
 
+from grpc import ChannelCredentials, Compression
+from opentelemetry.exporter.otlp.proto.common._internal.metrics_encoder import (
+    OTLPMetricExporterMixin,
+)
 from opentelemetry.exporter.otlp.proto.common.metrics_encoder import (
     encode_metrics,
 )
-from opentelemetry.sdk.metrics._internal.aggregation import Aggregation
-from opentelemetry.exporter.otlp.proto.grpc.exporter import (
+from opentelemetry.exporter.otlp.proto.grpc.exporter import (  # noqa: F401
     OTLPExporterMixin,
     _get_credentials,
     environ_to_compression,
-)
-from opentelemetry.exporter.otlp.proto.grpc.exporter import (  # noqa: F401
     get_resource_data,
 )
 from opentelemetry.proto.collector.metrics.v1.metrics_service_pb2 import (
@@ -42,30 +44,32 @@ from opentelemetry.proto.common.v1.common_pb2 import (  # noqa: F401
 from opentelemetry.proto.metrics.v1 import metrics_pb2 as pb2  # noqa: F401
 from opentelemetry.sdk.environment_variables import (
     OTEL_EXPORTER_OTLP_METRICS_CERTIFICATE,
+    OTEL_EXPORTER_OTLP_METRICS_CLIENT_CERTIFICATE,
+    OTEL_EXPORTER_OTLP_METRICS_CLIENT_KEY,
     OTEL_EXPORTER_OTLP_METRICS_COMPRESSION,
     OTEL_EXPORTER_OTLP_METRICS_ENDPOINT,
     OTEL_EXPORTER_OTLP_METRICS_HEADERS,
     OTEL_EXPORTER_OTLP_METRICS_INSECURE,
     OTEL_EXPORTER_OTLP_METRICS_TIMEOUT,
 )
-from opentelemetry.sdk.metrics.export import (
+from opentelemetry.sdk.metrics._internal.aggregation import Aggregation
+from opentelemetry.sdk.metrics.export import (  # noqa: F401
     AggregationTemporality,
     DataPointT,
+    Gauge,
     Metric,
     MetricExporter,
     MetricExportResult,
     MetricsData,
     ResourceMetrics,
     ScopeMetrics,
+    Sum,
 )
 from opentelemetry.sdk.metrics.export import (  # noqa: F401
-    Gauge,
-    Histogram as HistogramType,
-    Sum,
     ExponentialHistogram as ExponentialHistogramType,
 )
-from opentelemetry.exporter.otlp.proto.common._internal.metrics_encoder import (
-    OTLPMetricExporterMixin,
+from opentelemetry.sdk.metrics.export import (  # noqa: F401
+    Histogram as HistogramType,
 )
 
 _logger = getLogger(__name__)
@@ -90,19 +94,19 @@ class OTLPMetricExporter(
 
     def __init__(
         self,
-        endpoint: Optional[str] = None,
-        insecure: Optional[bool] = None,
-        credentials: Optional[ChannelCredentials] = None,
-        headers: Optional[
-            Union[TypingSequence[Tuple[str, str]], Dict[str, str], str]
-        ] = None,
-        timeout: Optional[int] = None,
-        compression: Optional[Compression] = None,
-        preferred_temporality: Dict[type, AggregationTemporality] = None,
-        preferred_aggregation: Dict[type, Aggregation] = None,
-        max_export_batch_size: Optional[int] = None,
+        endpoint: str | None = None,
+        insecure: bool | None = None,
+        credentials: ChannelCredentials | None = None,
+        headers: Union[TypingSequence[Tuple[str, str]], dict[str, str], str]
+        | None = None,
+        timeout: float | None = None,
+        compression: Compression | None = None,
+        preferred_temporality: dict[type, AggregationTemporality]
+        | None = None,
+        preferred_aggregation: dict[type, Aggregation] | None = None,
+        max_export_batch_size: int | None = None,
+        channel_options: TypingSequence[Tuple[str, str]] | None = None,
     ):
-
         if insecure is None:
             insecure = environ.get(OTEL_EXPORTER_OTLP_METRICS_INSECURE)
             if insecure is not None:
@@ -113,12 +117,15 @@ class OTLPMetricExporter(
             and environ.get(OTEL_EXPORTER_OTLP_METRICS_CERTIFICATE) is not None
         ):
             credentials = _get_credentials(
-                credentials, OTEL_EXPORTER_OTLP_METRICS_CERTIFICATE
+                credentials,
+                OTEL_EXPORTER_OTLP_METRICS_CERTIFICATE,
+                OTEL_EXPORTER_OTLP_METRICS_CLIENT_KEY,
+                OTEL_EXPORTER_OTLP_METRICS_CLIENT_CERTIFICATE,
             )
 
         environ_timeout = environ.get(OTEL_EXPORTER_OTLP_METRICS_TIMEOUT)
         environ_timeout = (
-            int(environ_timeout) if environ_timeout is not None else None
+            float(environ_timeout) if environ_timeout is not None else None
         )
 
         compression = (
@@ -140,9 +147,10 @@ class OTLPMetricExporter(
             headers=headers or environ.get(OTEL_EXPORTER_OTLP_METRICS_HEADERS),
             timeout=timeout or environ_timeout,
             compression=compression,
+            channel_options=channel_options,
         )
 
-        self._max_export_batch_size: Optional[int] = max_export_batch_size
+        self._max_export_batch_size: int | None = max_export_batch_size
 
     def _translate_data(
         self, data: MetricsData
@@ -166,7 +174,6 @@ class OTLPMetricExporter(
 
             if split_export_result is MetricExportResult.FAILURE:
                 export_result = MetricExportResult.FAILURE
-
         return export_result
 
     def _split_metrics_data(

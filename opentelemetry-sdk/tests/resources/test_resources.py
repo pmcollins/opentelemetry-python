@@ -28,6 +28,10 @@ from opentelemetry.sdk.resources import (
     _DEFAULT_RESOURCE,
     _EMPTY_RESOURCE,
     _OPENTELEMETRY_SDK_VERSION,
+    HOST_ARCH,
+    HOST_NAME,
+    OS_TYPE,
+    OS_VERSION,
     OTEL_RESOURCE_ATTRIBUTES,
     OTEL_SERVICE_NAME,
     PROCESS_COMMAND,
@@ -45,10 +49,12 @@ from opentelemetry.sdk.resources import (
     TELEMETRY_SDK_LANGUAGE,
     TELEMETRY_SDK_NAME,
     TELEMETRY_SDK_VERSION,
+    OsResourceDetector,
     OTELResourceDetector,
     ProcessResourceDetector,
     Resource,
     ResourceDetector,
+    _HostResourceDetector,
     get_aggregated_resources,
 )
 
@@ -511,9 +517,9 @@ class TestOTELResourceDetector(unittest.TestCase):
 
     def test_multiple_with_url_decode(self):
         detector = OTELResourceDetector()
-        environ[
-            OTEL_RESOURCE_ATTRIBUTES
-        ] = "key=value%20test%0A, key2=value+%202"
+        environ[OTEL_RESOURCE_ATTRIBUTES] = (
+            "key=value%20test%0A, key2=value+%202"
+        )
         self.assertEqual(
             detector.detect(),
             Resource({"key": "value test\n", "key2": "value+ 2"}),
@@ -608,7 +614,7 @@ class TestOTELResourceDetector(unittest.TestCase):
         )
         self.assertEqual(
             aggregated_resource.attributes[PROCESS_COMMAND_ARGS],
-            tuple(sys.argv[1:]),
+            tuple(sys.argv),
         )
 
     def test_resource_detector_entry_points_default(self):
@@ -673,6 +679,24 @@ class TestOTELResourceDetector(unittest.TestCase):
         self.assertEqual(resource.attributes["a"], "b")
         self.assertEqual(resource.schema_url, "")
 
+    @patch.dict(
+        environ, {OTEL_EXPERIMENTAL_RESOURCE_DETECTORS: ""}, clear=True
+    )
+    def test_resource_detector_entry_points_empty(self):
+        resource = Resource({}).create()
+        self.assertEqual(
+            resource.attributes["telemetry.sdk.language"], "python"
+        )
+
+    @patch.dict(
+        environ, {OTEL_EXPERIMENTAL_RESOURCE_DETECTORS: "os"}, clear=True
+    )
+    def test_resource_detector_entry_points_os(self):
+        resource = Resource({}).create()
+
+        self.assertIn(OS_TYPE, resource.attributes)
+        self.assertIn(OS_VERSION, resource.attributes)
+
     def test_resource_detector_entry_points_otel(self):
         """
         Test that OTELResourceDetector-resource-generated attributes are
@@ -723,3 +747,68 @@ class TestOTELResourceDetector(unittest.TestCase):
             )
             self.assertIn(PROCESS_RUNTIME_VERSION, resource.attributes.keys())
             self.assertEqual(resource.schema_url, "")
+
+    @patch("platform.system", lambda: "Linux")
+    @patch("platform.release", lambda: "666.5.0-35-generic")
+    def test_os_detector_linux(self):
+        resource = get_aggregated_resources(
+            [OsResourceDetector()],
+            Resource({}),
+        )
+
+        self.assertEqual(resource.attributes[OS_TYPE], "linux")
+        self.assertEqual(resource.attributes[OS_VERSION], "666.5.0-35-generic")
+
+    @patch("platform.system", lambda: "Windows")
+    @patch("platform.version", lambda: "10.0.666")
+    def test_os_detector_windows(self):
+        resource = get_aggregated_resources(
+            [OsResourceDetector()],
+            Resource({}),
+        )
+
+        self.assertEqual(resource.attributes[OS_TYPE], "windows")
+        self.assertEqual(resource.attributes[OS_VERSION], "10.0.666")
+
+    @patch("platform.system", lambda: "SunOS")
+    @patch("platform.version", lambda: "666.4.0.15.0")
+    def test_os_detector_solaris(self):
+        resource = get_aggregated_resources(
+            [OsResourceDetector()],
+            Resource({}),
+        )
+
+        self.assertEqual(resource.attributes[OS_TYPE], "solaris")
+        self.assertEqual(resource.attributes[OS_VERSION], "666.4.0.15.0")
+
+
+class TestHostResourceDetector(unittest.TestCase):
+    @patch("socket.gethostname", lambda: "foo")
+    @patch("platform.machine", lambda: "AMD64")
+    def test_host_resource_detector(self):
+        resource = get_aggregated_resources(
+            [_HostResourceDetector()],
+            Resource({}),
+        )
+        self.assertEqual(resource.attributes[HOST_NAME], "foo")
+        self.assertEqual(resource.attributes[HOST_ARCH], "AMD64")
+
+    @patch.dict(
+        environ, {OTEL_EXPERIMENTAL_RESOURCE_DETECTORS: "host"}, clear=True
+    )
+    def test_resource_detector_entry_points_host(self):
+        resource = Resource({}).create()
+        self.assertIn(HOST_NAME, resource.attributes)
+        self.assertIn(HOST_ARCH, resource.attributes)
+
+    @patch.dict(
+        environ,
+        {OTEL_EXPERIMENTAL_RESOURCE_DETECTORS: "doesnotexist,host"},
+        clear=True,
+    )
+    def test_resource_detector_entry_points_tolerate_missing_detector(self):
+        resource = Resource({}).create()
+        self.assertEqual(
+            resource.attributes["telemetry.sdk.language"], "python"
+        )
+        self.assertIn(HOST_NAME, resource.attributes)

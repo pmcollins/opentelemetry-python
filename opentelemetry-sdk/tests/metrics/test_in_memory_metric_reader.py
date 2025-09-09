@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# pylint: disable=protected-access
+
 from time import sleep
 from unittest import TestCase
 from unittest.mock import Mock
@@ -109,7 +111,6 @@ class TestInMemoryMetricReader(TestCase):
         )
 
     def test_cumulative_multiple_collect(self):
-
         reader = InMemoryMetricReader(
             preferred_temporality={Counter: AggregationTemporality.CUMULATIVE}
         )

@@ -84,12 +84,12 @@ API
 
 # TODO: make pylint use 3p opentracing module for type inference
 # pylint:disable=no-member
+from __future__ import annotations
 
 import logging
 from types import TracebackType
-from typing import Optional, Type, TypeVar, Union
+from typing import Type, TypeVar
 
-from deprecated import deprecated
 from opentracing import (
     Format,
     Scope,
@@ -99,6 +99,7 @@ from opentracing import (
     Tracer,
     UnsupportedFormatException,
 )
+from typing_extensions import deprecated
 
 from opentelemetry.baggage import get_baggage, set_baggage
 from opentelemetry.context import (
@@ -112,15 +113,17 @@ from opentelemetry.context import (
 from opentelemetry.propagate import get_global_textmap
 from opentelemetry.shim.opentracing_shim import util
 from opentelemetry.shim.opentracing_shim.version import __version__
-from opentelemetry.trace import INVALID_SPAN_CONTEXT, Link, NonRecordingSpan
-from opentelemetry.trace import SpanContext as OtelSpanContext
-from opentelemetry.trace import Tracer as OtelTracer
 from opentelemetry.trace import (
+    INVALID_SPAN_CONTEXT,
+    Link,
+    NonRecordingSpan,
     TracerProvider,
     get_current_span,
     set_span_in_context,
     use_span,
 )
+from opentelemetry.trace import SpanContext as OtelSpanContext
+from opentelemetry.trace import Tracer as OtelTracer
 from opentelemetry.util.types import Attributes
 
 ValueT = TypeVar("ValueT", int, float, bool, str)
@@ -217,7 +220,7 @@ class SpanShim(Span):
         self._otel_span.update_name(operation_name)
         return self
 
-    def finish(self, finish_time: float = None):
+    def finish(self, finish_time: float | None = None):
         """Ends the OpenTelemetry span wrapped by this :class:`SpanShim`.
 
         If *finish_time* is provided, the time value is converted to the
@@ -253,7 +256,7 @@ class SpanShim(Span):
         return self
 
     def log_kv(
-        self, key_values: Attributes, timestamp: float = None
+        self, key_values: Attributes, timestamp: float | None = None
     ) -> "SpanShim":
         """Logs an event for the wrapped OpenTelemetry span.
 
@@ -283,11 +286,11 @@ class SpanShim(Span):
         self._otel_span.add_event(event_name, key_values, event_timestamp)
         return self
 
-    @deprecated(reason="This method is deprecated in favor of log_kv")
+    @deprecated("This method is deprecated in favor of log_kv")
     def log(self, **kwargs):
         super().log(**kwargs)
 
-    @deprecated(reason="This method is deprecated in favor of log_kv")
+    @deprecated("This method is deprecated in favor of log_kv")
     def log_event(self, event, payload=None):
         super().log_event(event, payload=payload)
 
@@ -304,7 +307,7 @@ class SpanShim(Span):
             key, value, context=self._context._baggage
         )
 
-    def get_baggage_item(self, key: str) -> Optional[object]:
+    def get_baggage_item(self, key: str) -> object | None:
         """Retrieves value of the baggage item with the given key.
 
         Args:
@@ -422,9 +425,9 @@ class ScopeShim(Scope):
 
     def _end_span_scope(
         self,
-        exc_type: Optional[Type[BaseException]],
-        exc_val: Optional[BaseException],
-        exc_tb: Optional[TracebackType],
+        exc_type: Type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
     ) -> None:
         detach(self._token)
         if self._span_cm is not None:
@@ -558,10 +561,10 @@ class TracerShim(Tracer):
     def start_active_span(
         self,
         operation_name: str,
-        child_of: Union[SpanShim, SpanContextShim] = None,
-        references: list = None,
+        child_of: SpanShim | SpanContextShim | None = None,
+        references: list | None = None,
         tags: Attributes = None,
-        start_time: float = None,
+        start_time: float | None = None,
         ignore_active_span: bool = False,
         finish_on_close: bool = True,
     ) -> "ScopeShim":
@@ -611,11 +614,11 @@ class TracerShim(Tracer):
 
     def start_span(
         self,
-        operation_name: str = None,
-        child_of: Union[SpanShim, SpanContextShim] = None,
-        references: list = None,
+        operation_name: str | None = None,
+        child_of: SpanShim | SpanContextShim | None = None,
+        references: list | None = None,
         tags: Attributes = None,
-        start_time: float = None,
+        start_time: float | None = None,
         ignore_active_span: bool = False,
     ) -> SpanShim:
         """Implements the ``start_span()`` method from the base class.

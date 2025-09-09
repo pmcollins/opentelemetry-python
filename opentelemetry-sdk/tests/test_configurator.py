@@ -13,11 +13,14 @@
 # limitations under the License.
 # type: ignore
 # pylint: skip-file
+from __future__ import annotations
 
+import logging
+import logging.config
 from logging import WARNING, getLogger
 from os import environ
-from typing import Dict, Iterable, Optional, Sequence
-from unittest import TestCase
+from typing import Iterable, Optional, Sequence
+from unittest import TestCase, mock
 from unittest.mock import Mock, patch
 
 from pytest import raises
@@ -40,8 +43,10 @@ from opentelemetry.sdk._configuration import (
     _init_metrics,
     _init_tracing,
     _initialize_components,
+    _OTelSDKConfigurator,
 )
 from opentelemetry.sdk._logs import LoggingHandler
+from opentelemetry.sdk._logs._internal.export import LogExporter
 from opentelemetry.sdk._logs.export import ConsoleLogExporter
 from opentelemetry.sdk.environment_variables import (
     OTEL_TRACES_SAMPLER,
@@ -135,10 +140,11 @@ class DummyMetricReader(MetricReader):
     def __init__(
         self,
         exporter: MetricExporter,
-        preferred_temporality: Dict[type, AggregationTemporality] = None,
-        preferred_aggregation: Dict[type, Aggregation] = None,
-        export_interval_millis: Optional[float] = None,
-        export_timeout_millis: Optional[float] = None,
+        preferred_temporality: dict[type, AggregationTemporality]
+        | None = None,
+        preferred_aggregation: dict[type, Aggregation] | None = None,
+        export_interval_millis: float | None = None,
+        export_timeout_millis: float | None = None,
     ) -> None:
         super().__init__(
             preferred_temporality=preferred_temporality,
@@ -173,8 +179,9 @@ class DummyMetricReaderPullExporter(MetricReader):
 
 
 class DummyOTLPMetricExporter:
-    def __init__(self, *args, **kwargs):
+    def __init__(self, compression: str | None = None, *args, **kwargs):
         self.export_called = False
+        self.compression = compression
 
     def export(self, batch):
         self.export_called = True
@@ -197,12 +204,14 @@ class Exporter:
 
 
 class OTLPSpanExporter:
-    pass
+    def __init__(self, compression: str | None = None, *args, **kwargs):
+        self.compression = compression
 
 
-class DummyOTLPLogExporter:
-    def __init__(self, *args, **kwargs):
+class DummyOTLPLogExporter(LogExporter):
+    def __init__(self, compression: str | None = None, *args, **kwargs):
         self.export_called = False
+        self.compression = compression
 
     def export(self, batch):
         self.export_called = True
@@ -249,13 +258,13 @@ class CustomRatioSampler(TraceIdRatioBased):
 
     def should_sample(
         self,
-        parent_context: Optional["Context"],
+        parent_context: "Context" | None,
         trace_id: int,
         name: str,
-        kind: SpanKind = None,
+        kind: SpanKind | None = None,
         attributes: Attributes = None,
-        links: Sequence[Link] = None,
-        trace_state: TraceState = None,
+        links: Sequence[Link] | None = None,
+        trace_state: TraceState | None = None,
     ) -> "SamplingResult":
         return SamplingResult(
             Decision.RECORD_AND_SAMPLE,
@@ -368,6 +377,20 @@ class TestTraceInit(TestCase):
             provider.resource.attributes.get("service.name"),
             "my-otlp-test-service",
         )
+
+    def test_trace_init_exporter_uses_exporter_args_map(self):
+        _init_tracing(
+            {"otlp": OTLPSpanExporter},
+            id_generator=RandomIdGenerator(),
+            exporter_args_map={
+                OTLPSpanExporter: {"compression": "gzip"},
+                DummyMetricReaderPullExporter: {"compression": "no"},
+            },
+        )
+
+        provider = self.set_provider_mock.call_args[0][0]
+        exporter = provider.processor.exporter
+        self.assertEqual(exporter.compression, "gzip")
 
     @patch.dict(environ, {OTEL_PYTHON_ID_GENERATOR: "custom_id_generator"})
     @patch("opentelemetry.sdk._configuration.IdGenerator", new=IdGenerator)
@@ -585,14 +608,32 @@ class TestLoggingInit(TestCase):
             "opentelemetry.sdk._configuration.set_logger_provider"
         )
 
+        self.event_logger_provider_instance_mock = Mock()
+        self.event_logger_provider_patch = patch(
+            "opentelemetry.sdk._configuration.EventLoggerProvider",
+            return_value=self.event_logger_provider_instance_mock,
+        )
+        self.set_event_logger_provider_patch = patch(
+            "opentelemetry.sdk._configuration.set_event_logger_provider"
+        )
+
         self.processor_mock = self.processor_patch.start()
         self.provider_mock = self.provider_patch.start()
         self.set_provider_mock = self.set_provider_patch.start()
+
+        self.event_logger_provider_mock = (
+            self.event_logger_provider_patch.start()
+        )
+        self.set_event_logger_provider_mock = (
+            self.set_event_logger_provider_patch.start()
+        )
 
     def tearDown(self):
         self.processor_patch.stop()
         self.set_provider_patch.stop()
         self.provider_patch.stop()
+        self.event_logger_provider_patch.stop()
+        self.set_event_logger_provider_patch.stop()
         root_logger = getLogger("root")
         root_logger.handlers = [
             handler
@@ -601,28 +642,77 @@ class TestLoggingInit(TestCase):
         ]
 
     def test_logging_init_empty(self):
-        auto_resource = Resource.create(
-            {
-                "telemetry.auto.version": "auto-version",
-            }
-        )
-        _init_logging({}, resource=auto_resource)
-        self.assertEqual(self.set_provider_mock.call_count, 1)
-        provider = self.set_provider_mock.call_args[0][0]
-        self.assertIsInstance(provider, DummyLoggerProvider)
-        self.assertIsInstance(provider.resource, Resource)
-        self.assertEqual(
-            provider.resource.attributes.get("telemetry.auto.version"),
-            "auto-version",
-        )
+        with ResetGlobalLoggingState():
+            auto_resource = Resource.create(
+                {
+                    "telemetry.auto.version": "auto-version",
+                }
+            )
+            _init_logging({}, resource=auto_resource)
+            self.assertEqual(self.set_provider_mock.call_count, 1)
+            provider = self.set_provider_mock.call_args[0][0]
+            self.assertIsInstance(provider, DummyLoggerProvider)
+            self.assertIsInstance(provider.resource, Resource)
+            self.assertEqual(
+                provider.resource.attributes.get("telemetry.auto.version"),
+                "auto-version",
+            )
+            self.event_logger_provider_mock.assert_called_once_with(
+                logger_provider=provider
+            )
+            self.set_event_logger_provider_mock.assert_called_once_with(
+                self.event_logger_provider_instance_mock
+            )
 
     @patch.dict(
         environ,
         {"OTEL_RESOURCE_ATTRIBUTES": "service.name=otlp-service"},
     )
     def test_logging_init_exporter(self):
+        with ResetGlobalLoggingState():
+            resource = Resource.create({})
+            _init_logging({"otlp": DummyOTLPLogExporter}, resource=resource)
+            self.assertEqual(self.set_provider_mock.call_count, 1)
+            provider = self.set_provider_mock.call_args[0][0]
+            self.assertIsInstance(provider, DummyLoggerProvider)
+            self.assertIsInstance(provider.resource, Resource)
+            self.assertEqual(
+                provider.resource.attributes.get("service.name"),
+                "otlp-service",
+            )
+            self.assertIsInstance(provider.processor, DummyLogRecordProcessor)
+            self.assertIsInstance(
+                provider.processor.exporter, DummyOTLPLogExporter
+            )
+            getLogger(__name__).error("hello")
+            self.assertTrue(provider.processor.exporter.export_called)
+
+    def test_logging_init_exporter_uses_exporter_args_map(self):
+        with ResetGlobalLoggingState():
+            resource = Resource.create({})
+            _init_logging(
+                {"otlp": DummyOTLPLogExporter},
+                resource=resource,
+                exporter_args_map={
+                    DummyOTLPLogExporter: {"compression": "gzip"},
+                    DummyOTLPMetricExporter: {"compression": "no"},
+                },
+            )
+            self.assertEqual(self.set_provider_mock.call_count, 1)
+            provider = self.set_provider_mock.call_args[0][0]
+            self.assertEqual(provider.processor.exporter.compression, "gzip")
+
+    @patch.dict(
+        environ,
+        {"OTEL_RESOURCE_ATTRIBUTES": "service.name=otlp-service"},
+    )
+    def test_logging_init_exporter_without_handler_setup(self):
         resource = Resource.create({})
-        _init_logging({"otlp": DummyOTLPLogExporter}, resource=resource)
+        _init_logging(
+            {"otlp": DummyOTLPLogExporter},
+            resource=resource,
+            setup_logging_handler=False,
+        )
         self.assertEqual(self.set_provider_mock.call_count, 1)
         provider = self.set_provider_mock.call_args[0][0]
         self.assertIsInstance(provider, DummyLoggerProvider)
@@ -636,7 +726,7 @@ class TestLoggingInit(TestCase):
             provider.processor.exporter, DummyOTLPLogExporter
         )
         getLogger(__name__).error("hello")
-        self.assertTrue(provider.processor.exporter.export_called)
+        self.assertFalse(provider.processor.exporter.export_called)
 
     @patch.dict(
         environ,
@@ -645,9 +735,11 @@ class TestLoggingInit(TestCase):
     @patch("opentelemetry.sdk._configuration._init_tracing")
     @patch("opentelemetry.sdk._configuration._init_logging")
     def test_logging_init_disable_default(self, logging_mock, tracing_mock):
-        _initialize_components("auto-version")
-        self.assertEqual(logging_mock.call_count, 0)
+        _initialize_components(auto_instrumentation_version="auto-version")
         self.assertEqual(tracing_mock.call_count, 1)
+        logging_mock.assert_called_once_with(
+            mock.ANY, mock.ANY, False, exporter_args_map=None
+        )
 
     @patch.dict(
         environ,
@@ -660,8 +752,10 @@ class TestLoggingInit(TestCase):
     @patch("opentelemetry.sdk._configuration._init_logging")
     def test_logging_init_enable_env(self, logging_mock, tracing_mock):
         with self.assertLogs(level=WARNING):
-            _initialize_components("auto-version")
-        self.assertEqual(logging_mock.call_count, 1)
+            _initialize_components(auto_instrumentation_version="auto-version")
+        logging_mock.assert_called_once_with(
+            mock.ANY, mock.ANY, True, exporter_args_map=None
+        )
         self.assertEqual(tracing_mock.call_count, 1)
 
     @patch.dict(
@@ -677,7 +771,7 @@ class TestLoggingInit(TestCase):
     def test_initialize_components_resource(
         self, metrics_mock, logging_mock, tracing_mock
     ):
-        _initialize_components("auto-version")
+        _initialize_components(auto_instrumentation_version="auto-version")
         self.assertEqual(logging_mock.call_count, 1)
         self.assertEqual(tracing_mock.call_count, 1)
         self.assertEqual(metrics_mock.call_count, 1)
@@ -691,6 +785,202 @@ class TestLoggingInit(TestCase):
         self.assertEqual(logging_resource, tracing_resource)
         self.assertEqual(logging_resource, metrics_resource)
         self.assertEqual(tracing_resource, metrics_resource)
+
+    @patch.dict(
+        environ,
+        {
+            "OTEL_TRACES_EXPORTER": _EXPORTER_OTLP,
+            "OTEL_METRICS_EXPORTER": _EXPORTER_OTLP_PROTO_GRPC,
+            "OTEL_LOGS_EXPORTER": _EXPORTER_OTLP_PROTO_HTTP,
+        },
+    )
+    @patch.dict(
+        environ,
+        {
+            "OTEL_RESOURCE_ATTRIBUTES": "service.name=otlp-service, custom.key.1=env-value",
+            "OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED": "False",
+        },
+    )
+    @patch("opentelemetry.sdk._configuration.Resource")
+    @patch("opentelemetry.sdk._configuration._import_exporters")
+    @patch("opentelemetry.sdk._configuration._get_exporter_names")
+    @patch("opentelemetry.sdk._configuration._init_tracing")
+    @patch("opentelemetry.sdk._configuration._init_logging")
+    @patch("opentelemetry.sdk._configuration._init_metrics")
+    def test_initialize_components_kwargs(
+        self,
+        metrics_mock,
+        logging_mock,
+        tracing_mock,
+        exporter_names_mock,
+        import_exporters_mock,
+        resource_mock,
+    ):
+        exporter_names_mock.return_value = [
+            "env_var_exporter_1",
+            "env_var_exporter_2",
+        ]
+        import_exporters_mock.return_value = (
+            "TEST_SPAN_EXPORTERS_DICT",
+            "TEST_METRICS_EXPORTERS_DICT",
+            "TEST_LOG_EXPORTERS_DICT",
+        )
+        resource_mock.create.return_value = "TEST_RESOURCE"
+        kwargs = {
+            "auto_instrumentation_version": "auto-version",
+            "trace_exporter_names": ["custom_span_exporter"],
+            "metric_exporter_names": ["custom_metric_exporter"],
+            "log_exporter_names": ["custom_log_exporter"],
+            "sampler": "TEST_SAMPLER",
+            "resource_attributes": {
+                "custom.key.1": "pass-in-value-1",
+                "custom.key.2": "pass-in-value-2",
+            },
+            "id_generator": "TEST_GENERATOR",
+            "setup_logging_handler": True,
+            "exporter_args_map": {1: {"compression": "gzip"}},
+        }
+        _initialize_components(**kwargs)
+
+        import_exporters_mock.assert_called_once_with(
+            [
+                "custom_span_exporter",
+                "env_var_exporter_1",
+                "env_var_exporter_2",
+            ],
+            [
+                "custom_metric_exporter",
+                "env_var_exporter_1",
+                "env_var_exporter_2",
+            ],
+            [
+                "custom_log_exporter",
+                "env_var_exporter_1",
+                "env_var_exporter_2",
+            ],
+        )
+        resource_mock.create.assert_called_once_with(
+            {
+                "telemetry.auto.version": "auto-version",
+                "custom.key.1": "pass-in-value-1",
+                "custom.key.2": "pass-in-value-2",
+            }
+        )
+        # Resource is checked separates
+        tracing_mock.assert_called_once_with(
+            exporters="TEST_SPAN_EXPORTERS_DICT",
+            id_generator="TEST_GENERATOR",
+            sampler="TEST_SAMPLER",
+            resource="TEST_RESOURCE",
+            exporter_args_map={1: {"compression": "gzip"}},
+        )
+        metrics_mock.assert_called_once_with(
+            "TEST_METRICS_EXPORTERS_DICT",
+            "TEST_RESOURCE",
+            exporter_args_map={1: {"compression": "gzip"}},
+        )
+        logging_mock.assert_called_once_with(
+            "TEST_LOG_EXPORTERS_DICT",
+            "TEST_RESOURCE",
+            True,
+            exporter_args_map={1: {"compression": "gzip"}},
+        )
+
+    def test_basicConfig_works_with_otel_handler(self):
+        with ResetGlobalLoggingState():
+            _init_logging(
+                {"otlp": DummyOTLPLogExporter},
+                Resource.create({}),
+                setup_logging_handler=True,
+            )
+
+            logging.basicConfig(level=logging.INFO)
+
+            root_logger = logging.getLogger()
+            stream_handlers = [
+                h
+                for h in root_logger.handlers
+                if isinstance(h, logging.StreamHandler)
+            ]
+            self.assertEqual(
+                len(stream_handlers),
+                1,
+                "basicConfig should add a StreamHandler even when OTel handler exists",
+            )
+
+    def test_basicConfig_preserves_otel_handler(self):
+        with ResetGlobalLoggingState():
+            _init_logging(
+                {"otlp": DummyOTLPLogExporter},
+                Resource.create({}),
+                setup_logging_handler=True,
+            )
+
+            root_logger = logging.getLogger()
+            self.assertEqual(
+                len(root_logger.handlers),
+                1,
+                "Should be exactly one OpenTelemetry LoggingHandler",
+            )
+            handler = root_logger.handlers[0]
+            self.assertIsInstance(handler, LoggingHandler)
+            logging.basicConfig()
+
+            self.assertGreater(len(root_logger.handlers), 1)
+
+            logging_handlers = [
+                h
+                for h in root_logger.handlers
+                if isinstance(h, LoggingHandler)
+            ]
+            self.assertEqual(
+                len(logging_handlers),
+                1,
+                "Should still have exactly one OpenTelemetry LoggingHandler",
+            )
+
+    def test_dictConfig_preserves_otel_handler(self):
+        with ResetGlobalLoggingState():
+            _init_logging(
+                {"otlp": DummyOTLPLogExporter},
+                Resource.create({}),
+                setup_logging_handler=True,
+            )
+
+            root = logging.getLogger()
+            self.assertEqual(
+                len(root.handlers),
+                1,
+                "Should be exactly one OpenTelemetry LoggingHandler",
+            )
+            logging.config.dictConfig(
+                {
+                    "version": 1,
+                    "disable_existing_loggers": False,  # If this is True all loggers are disabled. Many unit tests assert loggers emit logs.
+                    "handlers": {
+                        "console": {
+                            "class": "logging.StreamHandler",
+                            "level": "DEBUG",
+                            "stream": "ext://sys.stdout",
+                        },
+                    },
+                    "loggers": {
+                        "": {  # root logger
+                            "handlers": ["console"],
+                        },
+                    },
+                }
+            )
+            self.assertEqual(len(root.handlers), 2)
+
+            logging_handlers = [
+                h for h in root.handlers if isinstance(h, LoggingHandler)
+            ]
+            self.assertEqual(
+                len(logging_handlers),
+                1,
+                "Should still have exactly one OpenTelemetry LoggingHandler",
+            )
 
 
 class TestMetricsInit(TestCase):
@@ -764,6 +1054,20 @@ class TestMetricsInit(TestCase):
         self.assertIsInstance(provider, DummyMeterProvider)
         reader = provider._sdk_config.metric_readers[0]
         self.assertIsInstance(reader, DummyMetricReaderPullExporter)
+
+    def test_metrics_init_exporter_uses_exporter_args_map(self):
+        resource = Resource.create({})
+        _init_metrics(
+            {"otlp": DummyOTLPMetricExporter},
+            resource=resource,
+            exporter_args_map={
+                DummyOTLPMetricExporter: {"compression": "gzip"},
+                DummyMetricReaderPullExporter: {"compression": "no"},
+            },
+        )
+        provider = self.set_provider_mock.call_args[0][0]
+        reader = provider._sdk_config.metric_readers[0]
+        self.assertEqual(reader.exporter.compression, "gzip")
 
 
 class TestExporterNames(TestCase):
@@ -889,7 +1193,6 @@ class TestImportConfigComponents(TestCase):
     def test__import_config_components_missing_entry_point(
         self, mock_entry_points
     ):
-
         with raises(RuntimeError) as error:
             _import_config_components(["a", "b", "c"], "name")
         self.assertEqual(
@@ -903,10 +1206,86 @@ class TestImportConfigComponents(TestCase):
     def test__import_config_components_missing_component(
         self, mock_entry_points
     ):
-
         with raises(RuntimeError) as error:
             _import_config_components(["a", "b", "c"], "name")
         self.assertEqual(
             str(error.value),
             "Requested component 'a' not found in entry point 'name'",
         )
+
+
+class TestConfigurator(TestCase):
+    class CustomConfigurator(_OTelSDKConfigurator):
+        def _configure(self, **kwargs):
+            kwargs["sampler"] = "TEST_SAMPLER"
+            super()._configure(**kwargs)
+
+    @patch("opentelemetry.sdk._configuration._initialize_components")
+    def test_custom_configurator(self, mock_init_comp):
+        custom_configurator = TestConfigurator.CustomConfigurator()
+        custom_configurator._configure(
+            auto_instrumentation_version="TEST_VERSION2"
+        )
+        kwargs = {
+            "auto_instrumentation_version": "TEST_VERSION2",
+            "sampler": "TEST_SAMPLER",
+        }
+        mock_init_comp.assert_called_once_with(**kwargs)
+
+
+# Any test that calls _init_logging with setup_logging_handler=True
+# should call _init_logging within this context manager, to
+# ensure the global logging state is reset after the test.
+class ResetGlobalLoggingState:
+    def __init__(self):
+        self.original_basic_config = logging.basicConfig
+        self.original_dict_config = logging.config.dictConfig
+        self.original_file_config = logging.config.fileConfig
+        self.root_logger = getLogger()
+        self.original_handlers = None
+
+    def __enter__(self):
+        self.original_handlers = self.root_logger.handlers[:]
+        self.root_logger.handlers = []
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.root_logger.handlers = []
+        for handler in self.original_handlers:
+            self.root_logger.addHandler(handler)
+        logging.basicConfig = self.original_basic_config
+        logging.config.dictConfig = self.original_dict_config
+        logging.config.fileConfig = self.original_file_config
+
+
+class TestClearLoggingHandlers(TestCase):
+    def test_preserves_handlers(self):
+        root_logger = getLogger()
+        initial_handlers = root_logger.handlers[:]
+
+        test_handler = logging.StreamHandler()
+        root_logger.addHandler(test_handler)
+        expected_handlers = initial_handlers + [test_handler]
+
+        with ResetGlobalLoggingState():
+            self.assertEqual(len(root_logger.handlers), 0)
+            temp_handler = logging.StreamHandler()
+            root_logger.addHandler(temp_handler)
+
+        self.assertEqual(len(root_logger.handlers), len(expected_handlers))
+        for h1, h2 in zip(root_logger.handlers, expected_handlers):
+            self.assertIs(h1, h2)
+
+        root_logger.removeHandler(test_handler)
+
+    def test_preserves_original_logging_fns(self):
+        def f(x):
+            print("f")
+
+        with ResetGlobalLoggingState():
+            logging.basicConfig = f
+            logging.config.dictConfig = f
+            logging.config.fileConfig = f
+        self.assertEqual(logging.config.dictConfig.__name__, "dictConfig")
+        self.assertEqual(logging.basicConfig.__name__, "basicConfig")
+        self.assertEqual(logging.config.fileConfig.__name__, "fileConfig")

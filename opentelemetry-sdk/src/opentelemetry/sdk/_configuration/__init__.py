@@ -17,14 +17,18 @@
 OpenTelemetry SDK Configurator for Easy Instrumentation with Distros
 """
 
+from __future__ import annotations
+
 import logging
+import logging.config
 import os
 from abc import ABC, abstractmethod
 from os import environ
-from typing import Callable, Dict, List, Optional, Sequence, Tuple, Type, Union
+from typing import Any, Callable, Mapping, Sequence, Type, Union
 
 from typing_extensions import Literal
 
+from opentelemetry._events import set_event_logger_provider
 from opentelemetry._logs import set_logger_provider
 from opentelemetry.environment_variables import (
     OTEL_LOGS_EXPORTER,
@@ -33,6 +37,7 @@ from opentelemetry.environment_variables import (
     OTEL_TRACES_EXPORTER,
 )
 from opentelemetry.metrics import set_meter_provider
+from opentelemetry.sdk._events import EventLoggerProvider
 from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
 from opentelemetry.sdk._logs.export import BatchLogRecordProcessor, LogExporter
 from opentelemetry.sdk.environment_variables import (
@@ -50,7 +55,7 @@ from opentelemetry.sdk.metrics.export import (
     MetricReader,
     PeriodicExportingMetricReader,
 )
-from opentelemetry.sdk.resources import Resource
+from opentelemetry.sdk.resources import Attributes, Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor, SpanExporter
 from opentelemetry.sdk.trace.id_generator import IdGenerator
@@ -87,11 +92,20 @@ _OTEL_SAMPLER_ENTRY_POINT_GROUP = "opentelemetry_traces_sampler"
 
 _logger = logging.getLogger(__name__)
 
+ExporterArgsMap = Mapping[
+    Union[
+        Type[SpanExporter],
+        Type[MetricExporter],
+        Type[MetricReader],
+        Type[LogExporter],
+    ],
+    Mapping[str, Any],
+]
+
 
 def _import_config_components(
-    selected_components: List[str], entry_point_name: str
-) -> Sequence[Tuple[str, object]]:
-
+    selected_components: Sequence[str], entry_point_name: str
+) -> list[tuple[str, Type]]:
     component_implementations = []
 
     for selected_component in selected_components:
@@ -109,13 +123,11 @@ def _import_config_components(
                 )
             )
         except KeyError:
-
             raise RuntimeError(
                 f"Requested entry point '{entry_point_name}' not found"
             )
 
         except StopIteration:
-
             raise RuntimeError(
                 f"Requested component '{selected_component}' not found in "
                 f"entry point '{entry_point_name}'"
@@ -124,7 +136,7 @@ def _import_config_components(
     return component_implementations
 
 
-def _get_sampler() -> Optional[str]:
+def _get_sampler() -> str | None:
     return environ.get(OTEL_TRACES_SAMPLER, None)
 
 
@@ -177,8 +189,8 @@ def _get_exporter_entry_point(
 
 
 def _get_exporter_names(
-    signal_type: Literal["traces", "metrics", "logs"]
-) -> Sequence[str]:
+    signal_type: Literal["traces", "metrics", "logs"],
+) -> list[str]:
     names = environ.get(_EXPORTER_ENV_BY_SIGNAL_TYPE.get(signal_type, ""))
 
     if not names or names.lower().strip() == "none":
@@ -191,10 +203,11 @@ def _get_exporter_names(
 
 
 def _init_tracing(
-    exporters: Dict[str, Type[SpanExporter]],
-    id_generator: IdGenerator = None,
-    sampler: Sampler = None,
-    resource: Resource = None,
+    exporters: dict[str, Type[SpanExporter]],
+    id_generator: IdGenerator | None = None,
+    sampler: Sampler | None = None,
+    resource: Resource | None = None,
+    exporter_args_map: ExporterArgsMap | None = None,
 ):
     provider = TracerProvider(
         id_generator=id_generator,
@@ -203,24 +216,26 @@ def _init_tracing(
     )
     set_tracer_provider(provider)
 
+    exporter_args_map = exporter_args_map or {}
     for _, exporter_class in exporters.items():
-        exporter_args = {}
+        exporter_args = exporter_args_map.get(exporter_class, {})
         provider.add_span_processor(
             BatchSpanProcessor(exporter_class(**exporter_args))
         )
 
 
 def _init_metrics(
-    exporters_or_readers: Dict[
+    exporters_or_readers: dict[
         str, Union[Type[MetricExporter], Type[MetricReader]]
     ],
-    resource: Resource = None,
+    resource: Resource | None = None,
+    exporter_args_map: ExporterArgsMap | None = None,
 ):
     metric_readers = []
 
+    exporter_args_map = exporter_args_map or {}
     for _, exporter_or_reader_class in exporters_or_readers.items():
-        exporter_args = {}
-
+        exporter_args = exporter_args_map.get(exporter_or_reader_class, {})
         if issubclass(exporter_or_reader_class, MetricReader):
             metric_readers.append(exporter_or_reader_class(**exporter_args))
         else:
@@ -235,37 +250,75 @@ def _init_metrics(
 
 
 def _init_logging(
-    exporters: Dict[str, Type[LogExporter]],
-    resource: Resource = None,
+    exporters: dict[str, Type[LogExporter]],
+    resource: Resource | None = None,
+    setup_logging_handler: bool = True,
+    exporter_args_map: ExporterArgsMap | None = None,
 ):
     provider = LoggerProvider(resource=resource)
     set_logger_provider(provider)
 
+    exporter_args_map = exporter_args_map or {}
     for _, exporter_class in exporters.items():
-        exporter_args = {}
+        exporter_args = exporter_args_map.get(exporter_class, {})
         provider.add_log_record_processor(
             BatchLogRecordProcessor(exporter_class(**exporter_args))
         )
 
-    handler = LoggingHandler(level=logging.NOTSET, logger_provider=provider)
+    event_logger_provider = EventLoggerProvider(logger_provider=provider)
+    set_event_logger_provider(event_logger_provider)
 
-    logging.getLogger().addHandler(handler)
+    if setup_logging_handler:
+        # Add OTel handler
+        handler = LoggingHandler(
+            level=logging.NOTSET, logger_provider=provider
+        )
+        logging.getLogger().addHandler(handler)
+        _overwrite_logging_config_fns(handler)
+
+
+def _overwrite_logging_config_fns(handler: LoggingHandler) -> None:
+    root = logging.getLogger()
+
+    def wrapper(config_fn: Callable) -> Callable:
+        def overwritten_config_fn(*args, **kwargs):
+            removed_handler = False
+            # We don't want the OTLP handler to be modified or deleted by the logging config functions.
+            # So we remove it and then add it back after the function call.
+            if handler in root.handlers:
+                removed_handler = True
+                root.handlers.remove(handler)
+            try:
+                config_fn(*args, **kwargs)
+            finally:
+                # Ensure handler is added back if logging function throws exception.
+                if removed_handler:
+                    root.addHandler(handler)
+
+        return overwritten_config_fn
+
+    logging.config.fileConfig = wrapper(logging.config.fileConfig)
+    logging.config.dictConfig = wrapper(logging.config.dictConfig)
+    logging.basicConfig = wrapper(logging.basicConfig)
 
 
 def _import_exporters(
     trace_exporter_names: Sequence[str],
     metric_exporter_names: Sequence[str],
     log_exporter_names: Sequence[str],
-) -> Tuple[
-    Dict[str, Type[SpanExporter]],
-    Dict[str, Union[Type[MetricExporter], Type[MetricReader]]],
-    Dict[str, Type[LogExporter]],
+) -> tuple[
+    dict[str, Type[SpanExporter]],
+    dict[str, Union[Type[MetricExporter], Type[MetricReader]]],
+    dict[str, Type[LogExporter]],
 ]:
     trace_exporters = {}
     metric_exporters = {}
     log_exporters = {}
 
-    for (exporter_name, exporter_impl,) in _import_config_components(
+    for (
+        exporter_name,
+        exporter_impl,
+    ) in _import_config_components(
         trace_exporter_names, "opentelemetry_traces_exporter"
     ):
         if issubclass(exporter_impl, SpanExporter):
@@ -273,7 +326,10 @@ def _import_exporters(
         else:
             raise RuntimeError(f"{exporter_name} is not a trace exporter")
 
-    for (exporter_name, exporter_impl,) in _import_config_components(
+    for (
+        exporter_name,
+        exporter_impl,
+    ) in _import_config_components(
         metric_exporter_names, "opentelemetry_metrics_exporter"
     ):
         # The metric exporter components may be push MetricExporter or pull exporters which
@@ -283,7 +339,10 @@ def _import_exporters(
         else:
             raise RuntimeError(f"{exporter_name} is not a metric exporter")
 
-    for (exporter_name, exporter_impl,) in _import_config_components(
+    for (
+        exporter_name,
+        exporter_impl,
+    ) in _import_config_components(
         log_exporter_names, "opentelemetry_logs_exporter"
     ):
         if issubclass(exporter_impl, LogExporter):
@@ -294,14 +353,16 @@ def _import_exporters(
     return trace_exporters, metric_exporters, log_exporters
 
 
-def _import_sampler_factory(sampler_name: str) -> Callable[[str], Sampler]:
+def _import_sampler_factory(
+    sampler_name: str,
+) -> Callable[[float | str | None], Sampler]:
     _, sampler_impl = _import_config_components(
         [sampler_name.strip()], _OTEL_SAMPLER_ENTRY_POINT_GROUP
     )[0]
     return sampler_impl
 
 
-def _import_sampler(sampler_name: str) -> Optional[Sampler]:
+def _import_sampler(sampler_name: str | None) -> Sampler | None:
     if not sampler_name:
         return None
     try:
@@ -309,7 +370,7 @@ def _import_sampler(sampler_name: str) -> Optional[Sampler]:
         arg = None
         if sampler_name in ("traceidratio", "parentbased_traceidratio"):
             try:
-                rate = float(os.getenv(OTEL_TRACES_SAMPLER_ARG))
+                rate = float(os.getenv(OTEL_TRACES_SAMPLER_ARG, ""))
             except (ValueError, TypeError):
                 _logger.warning(
                     "Could not convert TRACES_SAMPLER_ARG to float. Using default value 1.0."
@@ -325,7 +386,7 @@ def _import_sampler(sampler_name: str) -> Optional[Sampler]:
             _logger.warning(message)
             raise ValueError(message)
         return sampler
-    except Exception as exc:  # pylint: disable=broad-except
+    except Exception as exc:  # pylint: disable=broad-exception-caught
         _logger.warning(
             "Using default sampler. Failed to initialize sampler, %s: %s",
             sampler_name,
@@ -345,38 +406,70 @@ def _import_id_generator(id_generator_name: str) -> IdGenerator:
     raise RuntimeError(f"{id_generator_name} is not an IdGenerator")
 
 
-def _initialize_components(auto_instrumentation_version):
-    trace_exporters, metric_exporters, log_exporters = _import_exporters(
-        _get_exporter_names("traces"),
-        _get_exporter_names("metrics"),
-        _get_exporter_names("logs"),
+def _initialize_components(
+    auto_instrumentation_version: str | None = None,
+    trace_exporter_names: list[str] | None = None,
+    metric_exporter_names: list[str] | None = None,
+    log_exporter_names: list[str] | None = None,
+    sampler: Sampler | None = None,
+    resource_attributes: Attributes | None = None,
+    id_generator: IdGenerator | None = None,
+    setup_logging_handler: bool | None = None,
+    exporter_args_map: ExporterArgsMap | None = None,
+):
+    if trace_exporter_names is None:
+        trace_exporter_names = []
+    if metric_exporter_names is None:
+        metric_exporter_names = []
+    if log_exporter_names is None:
+        log_exporter_names = []
+    span_exporters, metric_exporters, log_exporters = _import_exporters(
+        trace_exporter_names + _get_exporter_names("traces"),
+        metric_exporter_names + _get_exporter_names("metrics"),
+        log_exporter_names + _get_exporter_names("logs"),
     )
-    sampler_name = _get_sampler()
-    sampler = _import_sampler(sampler_name)
-    id_generator_name = _get_id_generator()
-    id_generator = _import_id_generator(id_generator_name)
-    # if env var OTEL_RESOURCE_ATTRIBUTES is given, it will read the service_name
-    # from the env variable else defaults to "unknown_service"
-    auto_resource = {}
+    if sampler is None:
+        sampler_name = _get_sampler()
+        sampler = _import_sampler(sampler_name)
+    if id_generator is None:
+        id_generator_name = _get_id_generator()
+        id_generator = _import_id_generator(id_generator_name)
+    if resource_attributes is None:
+        resource_attributes = {}
     # populate version if using auto-instrumentation
     if auto_instrumentation_version:
-        auto_resource[
-            ResourceAttributes.TELEMETRY_AUTO_VERSION
-        ] = auto_instrumentation_version
-    resource = Resource.create(auto_resource)
+        resource_attributes[ResourceAttributes.TELEMETRY_AUTO_VERSION] = (  # type: ignore[reportIndexIssue]
+            auto_instrumentation_version
+        )
+    # if env var OTEL_RESOURCE_ATTRIBUTES is given, it will read the service_name
+    # from the env variable else defaults to "unknown_service"
+    resource = Resource.create(resource_attributes)
 
     _init_tracing(
-        exporters=trace_exporters,
+        exporters=span_exporters,
         id_generator=id_generator,
         sampler=sampler,
         resource=resource,
+        exporter_args_map=exporter_args_map,
     )
-    _init_metrics(metric_exporters, resource)
-    logging_enabled = os.getenv(
-        _OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED, "false"
+    _init_metrics(
+        metric_exporters, resource, exporter_args_map=exporter_args_map
     )
-    if logging_enabled.strip().lower() == "true":
-        _init_logging(log_exporters, resource)
+    if setup_logging_handler is None:
+        setup_logging_handler = (
+            os.getenv(
+                _OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED, "false"
+            )
+            .strip()
+            .lower()
+            == "true"
+        )
+    _init_logging(
+        log_exporters,
+        resource,
+        setup_logging_handler,
+        exporter_args_map=exporter_args_map,
+    )
 
 
 class _BaseConfigurator(ABC):
@@ -391,7 +484,6 @@ class _BaseConfigurator(ABC):
     _is_instrumented = False
 
     def __new__(cls, *args, **kwargs):
-
         if cls._instance is None:
             cls._instance = object.__new__(cls, *args, **kwargs)
 
@@ -419,4 +511,4 @@ class _OTelSDKConfigurator(_BaseConfigurator):
     """
 
     def _configure(self, **kwargs):
-        _initialize_components(kwargs.get("auto_instrumentation_version"))
+        _initialize_components(**kwargs)

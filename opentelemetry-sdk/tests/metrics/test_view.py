@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# pylint: disable=protected-access
+
 from unittest import TestCase
 from unittest.mock import Mock
 
@@ -20,16 +22,13 @@ from opentelemetry.sdk.metrics.view import View
 
 class TestView(TestCase):
     def test_required_instrument_criteria(self):
-
         with self.assertRaises(Exception):
             View()
 
     def test_instrument_type(self):
-
         self.assertTrue(View(instrument_type=Mock)._match(Mock()))
 
     def test_instrument_name(self):
-
         mock_instrument = Mock()
         mock_instrument.configure_mock(**{"name": "instrument_name"})
 
@@ -38,7 +37,6 @@ class TestView(TestCase):
         )
 
     def test_instrument_unit(self):
-
         mock_instrument = Mock()
         mock_instrument.configure_mock(**{"unit": "instrument_unit"})
 
@@ -47,7 +45,6 @@ class TestView(TestCase):
         )
 
     def test_meter_name(self):
-
         self.assertTrue(
             View(meter_name="meter_name")._match(
                 Mock(**{"instrumentation_scope.name": "meter_name"})
@@ -55,7 +52,6 @@ class TestView(TestCase):
         )
 
     def test_meter_version(self):
-
         self.assertTrue(
             View(meter_version="meter_version")._match(
                 Mock(**{"instrumentation_scope.version": "meter_version"})
@@ -63,7 +59,6 @@ class TestView(TestCase):
         )
 
     def test_meter_schema_url(self):
-
         self.assertTrue(
             View(meter_schema_url="meter_schema_url")._match(
                 Mock(
@@ -89,7 +84,6 @@ class TestView(TestCase):
         )
 
     def test_additive_criteria(self):
-
         view = View(
             meter_name="meter_name",
             meter_version="meter_version",
@@ -120,6 +114,5 @@ class TestView(TestCase):
         )
 
     def test_view_name(self):
-
         with self.assertRaises(Exception):
             View(name="name", instrument_name="instrument_name*")

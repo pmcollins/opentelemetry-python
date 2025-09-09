@@ -16,7 +16,6 @@ from math import ceil, log2
 
 
 class Buckets:
-
     # No method of this class is protected by locks because instances of this
     # class are only used in methods that are protected by locks themselves.
 
@@ -73,8 +72,11 @@ class Buckets:
     def counts(self):
         return self._counts
 
-    def grow(self, needed: int, max_size: int) -> None:
+    def get_offset_counts(self):
+        bias = self.__index_base - self.__index_start
+        return self._counts[-bias:] + self._counts[:-bias]
 
+    def grow(self, needed: int, max_size: int) -> None:
         size = len(self._counts)
         bias = self.__index_base - self.__index_start
         old_positive_limit = size - bias
@@ -129,7 +131,6 @@ class Buckets:
         bias = self.__index_base - self.__index_start
 
         if bias != 0:
-
             self.__index_base = self.__index_start
 
             # [0, 1, 2, 3, 4] Original backing array
@@ -157,7 +158,6 @@ class Buckets:
             index = mod
 
             while index < each and inpos < size:
-
                 if outpos != inpos:
                     self._counts[outpos] += self._counts[inpos]
                     self._counts[inpos] = 0
@@ -174,3 +174,17 @@ class Buckets:
 
     def increment_bucket(self, bucket_index: int, increment: int = 1) -> None:
         self._counts[bucket_index] += increment
+
+    def copy_empty(self) -> "Buckets":
+        copy = Buckets()
+
+        # pylint: disable=no-member
+        # pylint: disable=protected-access
+        # pylint: disable=attribute-defined-outside-init
+        # pylint: disable=invalid-name
+        copy._Buckets__index_base = self._Buckets__index_base
+        copy._Buckets__index_start = self._Buckets__index_start
+        copy._Buckets__index_end = self._Buckets__index_end
+        copy._counts = [0 for _ in self._counts]
+
+        return copy

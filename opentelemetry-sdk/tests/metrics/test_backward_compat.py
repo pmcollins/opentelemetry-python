@@ -22,7 +22,7 @@ This does not apply to classes which are not intended to be overridden by the us
 and PeriodicExportingMetricReader concrete class. Those may freely be modified in a
 backward-compatible way for *callers*.
 
-Ideally, we could use mypy for this as well, but SDK is not type checked atm.
+Ideally, we could use pyright for this as well, but SDK is not type checked atm.
 """
 
 from typing import Iterable, Sequence
@@ -44,7 +44,7 @@ from opentelemetry.test import TestCase
 class OrigMetricExporter(MetricExporter):
     def export(
         self,
-        metrics: Sequence[Metric],
+        metrics_data: Sequence[Metric],
         timeout_millis: float = 10_000,
         **kwargs,
     ) -> MetricExportResult:
@@ -60,7 +60,7 @@ class OrigMetricExporter(MetricExporter):
 class OrigMetricReader(MetricReader):
     def _receive_metrics(
         self,
-        metrics: Iterable[Metric],
+        metrics_data: Iterable[Metric],
         timeout_millis: float = 10_000,
         **kwargs,
     ) -> None:

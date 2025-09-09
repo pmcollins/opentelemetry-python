@@ -4,6 +4,9 @@ on:
     branches: [ main ]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   changedfiles:
     name: changed files
@@ -13,7 +16,7 @@ jobs:
       md: ${{ steps.changes.outputs.md }}
     steps:
       - name: Checkout Repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
       - name: Get changed files
@@ -23,15 +26,17 @@ jobs:
   check-links:
     runs-on: ubuntu-latest
     needs: changedfiles
-    if: ${{needs.changedfiles.outputs.md}}
+    if: |
+      github.event.pull_request.user.login != 'otelbot[bot]' && github.event_name == 'pull_request'
+      && ${{needs.changedfiles.outputs.md}}
     steps:
       - name: Checkout Repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
       - name: Install markdown-link-check
-        run: npm install -g markdown-link-check
+        run: npm install -g markdown-link-check@v3.12.2
 
       - name: Run markdown-link-check
         run: |

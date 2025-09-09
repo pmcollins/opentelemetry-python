@@ -9,8 +9,11 @@
       (otherwise the workflow will pick up the version from `main` and just remove the `.dev` suffix).
   * Review the two pull requests that it creates.
     (one is targeted to the release branch and one is targeted to `main`).
-    * Merge the one targeted towards the release branch.
-    * The builds will fail for the `main` pr because of validation rules. Follow the [release workflow](https://github.com/open-telemetry/opentelemetry-python-contrib/blob/main/RELEASING.md) for the contrib repo up until this same point. Change the SHAs of each PR to point at each other to get the `main` builds to pass.
+    * The builds will fail for the release PR because of validation rules. Follow the [release workflow](https://github.com/open-telemetry/opentelemetry-python-contrib/blob/main/RELEASING.md) for the contrib repo up until this same point.
+    * Close and reopen the PR so that the workflow will take into account the label automation we have in place
+    * Release builds now should pass.
+  * Merge the release PR.
+  * Merge the PR to main (this can be done separately from [making the release](#making-the-release))
 
 ## Preparing a new patch release
 
@@ -19,6 +22,8 @@
   * Press the "Run workflow" button, then select the release branch from the dropdown list,
     e.g. `release/v1.9.x`, then enter the pull request number that you want to backport,
     then click the "Run workflow" button below that.
+  * Add the label `backport` to the generated pull request.
+  * In case label automation doesn't work, just close and reopen the PR so that the workflow will take into account the label automation we have in place.
   * Review and merge the backport pull request that it generates.
 * Merge a pull request to the release branch updating the `CHANGELOG.md`.
   * The heading for the unreleased entries should be `## Unreleased`.
@@ -26,6 +31,7 @@
   * Press the "Run workflow" button, then select the release branch from the dropdown list,
     e.g. `release/v1.9.x`, and click the "Run workflow" button below that.
   * Review and merge the pull request that it creates for updating the version.
+* Note: If you are doing a patch release in `-core` repo, you should also do an equivalent patch release in `-contrib` repo (even if there's no fix to release), otherwise tests in CI will fail.
 
 ## Making the release
 
@@ -33,9 +39,27 @@
   * Press the "Run workflow" button, then select the release branch from the dropdown list,
     e.g. `release/v1.9.x`, and click the "Run workflow" button below that.
   * This workflow will publish the artifacts and publish a GitHub release with release notes based on the change log.
-  * Review and merge the pull request that it creates for updating the change log in main
-    (note that if this is not a patch release then the change log on main may already be up-to-date,
-    in which case no pull request will be created).
+  * Verify that a new [Github release](https://github.com/open-telemetry/opentelemetry-python/releases) has been created and that the CHANGELOGs look correct.
+
+## After the release
+
+* Check PyPI
+  * This should be handled automatically on release by the [publish action](https://github.com/open-telemetry/opentelemetry-python/blob/main/.github/workflows/release.yml).
+  * Check the [action logs](https://github.com/open-telemetry/opentelemetry-python/actions?query=workflow%3APublish) to make sure packages have been uploaded to PyPI
+  * Check the release history (e.g. https://pypi.org/project/opentelemetry-api/#history) on PyPI
+  * If for some reason the action failed, see [Publish failed](#publish-failed) below
+* Move stable tag and kick-off documentation build
+  * Run the following (TODO automate):
+    ```bash
+    git tag -d stable
+    git tag stable
+    git push --delete origin stable
+    git push origin tag stable
+    ```
+  * ReadTheDocs will not automatically rebuild on tag changes, so manually kick-off a build of stable:
+    https://readthedocs.org/projects/opentelemetry-python/builds/.
+    ![ReadTheDocs build instructions](.github/rtd-build-instructions.png)
+  * This will ensure that ReadTheDocs for core are pointing at the stable release.
 
 ## Notes about version numbering for stable components
 
@@ -68,25 +92,9 @@
   * The version number for unstable components in the `main` branch will be bumped to the next version,
     e.g. `0.{Y+1}b0.dev`.
 
-## After the release
+## Releasing dev version of new packages to claim namespace
 
-* Check PyPI
-  * This should be handled automatically on release by the [publish action](https://github.com/open-telemetry/opentelemetry-python/blob/main/.github/workflows/release.yml).
-  * Check the [action logs](https://github.com/open-telemetry/opentelemetry-python/actions?query=workflow%3APublish) to make sure packages have been uploaded to PyPI
-  * Check the release history (e.g. https://pypi.org/project/opentelemetry-api/#history) on PyPI
-  * If for some reason the action failed, see [Publish failed](#publish-failed) below
-* Move stable tag
-  * Run the following (TODO automate):
-    ```bash
-    git tag -d stable
-    git tag stable
-    git push --delete origin tagname
-    git push origin stable
-    ```
-  * This will ensure the docs are pointing at the stable release.
-  * To validate this worked, ensure the stable build has run successfully:
-    https://readthedocs.org/projects/opentelemetry-python/builds/.
-    If the build has not run automatically, it can be manually trigger via the readthedocs interface.
+When a contribution introduces a new package, in order to mitigate name-squatting incidents, release the current development version of the new package under the `opentelemetry` user to simply claim the namespace. This should be done shortly after the PR that introduced this package has been merged into `main`.
 
 ## Troubleshooting
 

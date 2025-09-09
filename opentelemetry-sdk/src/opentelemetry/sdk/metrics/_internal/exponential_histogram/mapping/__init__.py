@@ -22,7 +22,6 @@ class Mapping(ABC):
 
     # pylint: disable=no-member
     def __new__(cls, scale: int):
-
         with cls._mappings_lock:
             # cls._mappings and cls._mappings_lock are implemented in each of
             # the child classes as a dictionary and a lock, respectively. They
@@ -40,9 +39,11 @@ class Mapping(ABC):
         # pylint: disable=attribute-defined-outside-init
 
         if scale > self._get_max_scale():
+            # pylint: disable=broad-exception-raised
             raise Exception(f"scale is larger than {self._max_scale}")
 
         if scale < self._get_min_scale():
+            # pylint: disable=broad-exception-raised
             raise Exception(f"scale is smaller than {self._min_scale}")
 
         # The size of the exponential histogram buckets is determined by a

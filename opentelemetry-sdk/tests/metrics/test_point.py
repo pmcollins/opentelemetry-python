@@ -36,7 +36,6 @@ from opentelemetry.sdk.util.instrumentation import InstrumentationScope
 class TestToJson(TestCase):
     @classmethod
     def setUpClass(cls):
-
         cls.attributes_0 = {
             "a": "b",
             "b": True,
@@ -67,7 +66,7 @@ class TestToJson(TestCase):
             time_unix_nano=2,
             value=3.3,
         )
-        cls.number_data_point_0_str = f'{{"attributes": {cls.attributes_0_str}, "start_time_unix_nano": 1, "time_unix_nano": 2, "value": 3.3}}'
+        cls.number_data_point_0_str = f'{{"attributes": {cls.attributes_0_str}, "start_time_unix_nano": 1, "time_unix_nano": 2, "value": 3.3, "exemplars": []}}'
 
         cls.number_data_point_1 = NumberDataPoint(
             attributes=cls.attributes_1,
@@ -75,7 +74,7 @@ class TestToJson(TestCase):
             time_unix_nano=3,
             value=4.4,
         )
-        cls.number_data_point_1_str = f'{{"attributes": {cls.attributes_1_str}, "start_time_unix_nano": 2, "time_unix_nano": 3, "value": 4.4}}'
+        cls.number_data_point_1_str = f'{{"attributes": {cls.attributes_1_str}, "start_time_unix_nano": 2, "time_unix_nano": 3, "value": 4.4, "exemplars": []}}'
 
         cls.histogram_data_point_0 = HistogramDataPoint(
             attributes=cls.attributes_0,
@@ -88,7 +87,7 @@ class TestToJson(TestCase):
             min=0.2,
             max=3.3,
         )
-        cls.histogram_data_point_0_str = f'{{"attributes": {cls.attributes_0_str}, "start_time_unix_nano": 1, "time_unix_nano": 2, "count": 3, "sum": 3.3, "bucket_counts": [1, 1, 1], "explicit_bounds": [0.1, 1.2, 2.3, 3.4], "min": 0.2, "max": 3.3}}'
+        cls.histogram_data_point_0_str = f'{{"attributes": {cls.attributes_0_str}, "start_time_unix_nano": 1, "time_unix_nano": 2, "count": 3, "sum": 3.3, "bucket_counts": [1, 1, 1], "explicit_bounds": [0.1, 1.2, 2.3, 3.4], "min": 0.2, "max": 3.3, "exemplars": []}}'
 
         cls.histogram_data_point_1 = HistogramDataPoint(
             attributes=cls.attributes_1,
@@ -101,7 +100,7 @@ class TestToJson(TestCase):
             min=0.3,
             max=4.4,
         )
-        cls.histogram_data_point_1_str = f'{{"attributes": {cls.attributes_1_str}, "start_time_unix_nano": 2, "time_unix_nano": 3, "count": 4, "sum": 4.4, "bucket_counts": [2, 1, 1], "explicit_bounds": [1.2, 2.3, 3.4, 4.5], "min": 0.3, "max": 4.4}}'
+        cls.histogram_data_point_1_str = f'{{"attributes": {cls.attributes_1_str}, "start_time_unix_nano": 2, "time_unix_nano": 3, "count": 4, "sum": 4.4, "bucket_counts": [2, 1, 1], "explicit_bounds": [1.2, 2.3, 3.4, 4.5], "min": 0.3, "max": 4.4, "exemplars": []}}'
 
         cls.exp_histogram_data_point_0 = ExponentialHistogramDataPoint(
             attributes=cls.attributes_0,
@@ -117,7 +116,7 @@ class TestToJson(TestCase):
             min=10,
             max=10,
         )
-        cls.exp_histogram_data_point_0_str = f'{{"attributes": {cls.attributes_0_str}, "start_time_unix_nano": 1, "time_unix_nano": 2, "count": 1, "sum": 10, "scale": 1, "zero_count": 0, "positive": {{"offset": 0, "bucket_counts": [1]}}, "negative": {{"offset": 0, "bucket_counts": [0]}}, "flags": 0, "min": 10, "max": 10}}'
+        cls.exp_histogram_data_point_0_str = f'{{"attributes": {cls.attributes_0_str}, "start_time_unix_nano": 1, "time_unix_nano": 2, "count": 1, "sum": 10, "scale": 1, "zero_count": 0, "positive": {{"offset": 0, "bucket_counts": [1]}}, "negative": {{"offset": 0, "bucket_counts": [0]}}, "flags": 0, "min": 10, "max": 10, "exemplars": []}}'
 
         cls.sum_0 = Sum(
             data_points=[cls.number_data_point_0, cls.number_data_point_1],
@@ -178,7 +177,7 @@ class TestToJson(TestCase):
             metrics=[cls.metric_0, cls.metric_1, cls.metric_2],
             schema_url="schema_url_0",
         )
-        cls.scope_metrics_0_str = f'{{"scope": {{"name": "name_0", "version": "version_0", "schema_url": "schema_url_0"}}, "metrics": [{cls.metric_0_str}, {cls.metric_1_str}, {cls.metric_2_str}], "schema_url": "schema_url_0"}}'
+        cls.scope_metrics_0_str = f'{{"scope": {{"name": "name_0", "version": "version_0", "schema_url": "schema_url_0", "attributes": null}}, "metrics": [{cls.metric_0_str}, {cls.metric_1_str}, {cls.metric_2_str}], "schema_url": "schema_url_0"}}'
 
         cls.scope_metrics_1 = ScopeMetrics(
             scope=InstrumentationScope(
@@ -189,7 +188,7 @@ class TestToJson(TestCase):
             metrics=[cls.metric_0, cls.metric_1, cls.metric_2],
             schema_url="schema_url_1",
         )
-        cls.scope_metrics_1_str = f'{{"scope": {{"name": "name_1", "version": "version_1", "schema_url": "schema_url_1"}}, "metrics": [{cls.metric_0_str}, {cls.metric_1_str}, {cls.metric_2_str}], "schema_url": "schema_url_1"}}'
+        cls.scope_metrics_1_str = f'{{"scope": {{"name": "name_1", "version": "version_1", "schema_url": "schema_url_1", "attributes": null}}, "metrics": [{cls.metric_0_str}, {cls.metric_1_str}, {cls.metric_2_str}], "schema_url": "schema_url_1"}}'
 
         cls.resource_metrics_0 = ResourceMetrics(
             resource=Resource(
@@ -215,7 +214,6 @@ class TestToJson(TestCase):
         cls.metrics_data_0_str = f'{{"resource_metrics": [{cls.resource_metrics_0_str}, {cls.resource_metrics_1_str}]}}'
 
     def test_number_data_point(self):
-
         self.assertEqual(
             self.number_data_point_0.to_json(indent=None),
             self.number_data_point_0_str,
@@ -226,7 +224,6 @@ class TestToJson(TestCase):
         )
 
     def test_histogram_data_point(self):
-
         self.assertEqual(
             self.histogram_data_point_0.to_json(indent=None),
             self.histogram_data_point_0_str,
@@ -237,40 +234,28 @@ class TestToJson(TestCase):
         )
 
     def test_exp_histogram_data_point(self):
-
-        self.maxDiff = None
-
         self.assertEqual(
             self.exp_histogram_data_point_0.to_json(indent=None),
             self.exp_histogram_data_point_0_str,
         )
 
     def test_sum(self):
-
         self.assertEqual(self.sum_0.to_json(indent=None), self.sum_0_str)
 
     def test_gauge(self):
-
-        self.maxDiff = None
-
         self.assertEqual(self.gauge_0.to_json(indent=None), self.gauge_0_str)
 
     def test_histogram(self):
-
         self.assertEqual(
             self.histogram_0.to_json(indent=None), self.histogram_0_str
         )
 
     def test_exp_histogram(self):
-
-        self.maxDiff = None
-
         self.assertEqual(
             self.exp_histogram_0.to_json(indent=None), self.exp_histogram_0_str
         )
 
     def test_metric(self):
-
         self.assertEqual(self.metric_0.to_json(indent=None), self.metric_0_str)
 
         self.assertEqual(self.metric_1.to_json(indent=None), self.metric_1_str)
@@ -278,7 +263,6 @@ class TestToJson(TestCase):
         self.assertEqual(self.metric_2.to_json(indent=None), self.metric_2_str)
 
     def test_scope_metrics(self):
-
         self.assertEqual(
             self.scope_metrics_0.to_json(indent=None), self.scope_metrics_0_str
         )
@@ -287,7 +271,6 @@ class TestToJson(TestCase):
         )
 
     def test_resource_metrics(self):
-
         self.assertEqual(
             self.resource_metrics_0.to_json(indent=None),
             self.resource_metrics_0_str,
@@ -298,7 +281,6 @@ class TestToJson(TestCase):
         )
 
     def test_metrics_data(self):
-
         self.assertEqual(
             self.metrics_data_0.to_json(indent=None), self.metrics_data_0_str
         )

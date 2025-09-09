@@ -13,6 +13,8 @@
 # limitations under the License.
 # type: ignore
 
+# pylint: disable=protected-access
+
 from unittest import TestCase
 from unittest.mock import Mock, patch
 
@@ -27,7 +29,11 @@ from opentelemetry.metrics import (
     get_meter_provider,
     set_meter_provider,
 )
-from opentelemetry.metrics._internal import _ProxyMeter, _ProxyMeterProvider
+from opentelemetry.metrics._internal import (
+    _ProxyMeter,
+    _ProxyMeterProvider,
+    get_meter,
+)
 from opentelemetry.metrics._internal.instrument import (
     _ProxyCounter,
     _ProxyGauge,
@@ -54,6 +60,7 @@ def reset_meter_provider():
     reset_metrics_globals()
 
 
+# pylint: disable=redefined-outer-name
 def test_set_meter_provider(reset_meter_provider):
     """
     Test that the API provides a way to set a global default MeterProvider
@@ -95,7 +102,6 @@ def test_get_meter_provider(reset_meter_provider):
     with patch.dict(
         "os.environ", {OTEL_PYTHON_METER_PROVIDER: "test_meter_provider"}
     ):
-
         with patch("opentelemetry.metrics._internal._load_provider", Mock()):
             with patch(
                 "opentelemetry.metrics._internal.cast",
@@ -113,7 +119,7 @@ class TestGetMeter(TestCase):
             NoOpMeterProvider().get_meter(
                 "name", version="version", schema_url="schema_url"
             )
-        except Exception as error:
+        except Exception as error:  # pylint: disable=broad-exception-caught
             self.fail(f"Unexpected exception raised: {error}")
 
     def test_invalid_name(self):
@@ -138,6 +144,25 @@ class TestGetMeter(TestCase):
         self.assertTrue(isinstance(meter, NoOpMeter))
 
         self.assertEqual(meter.name, None)
+
+    def test_get_meter_wrapper(self):
+        """
+        `metrics._internal.get_meter` called with valid parameters and a NoOpMeterProvider
+        should return a NoOpMeter with the same parameters.
+        """
+
+        meter = get_meter(
+            "name",
+            version="version",
+            meter_provider=NoOpMeterProvider(),
+            schema_url="schema_url",
+            attributes={"key": "value", "key2": 5, "key3": "value3"},
+        )
+
+        self.assertIsInstance(meter, NoOpMeter)
+        self.assertEqual(meter.name, "name")
+        self.assertEqual(meter.version, "version")
+        self.assertEqual(meter.schema_url, "schema_url")
 
 
 class TestProxy(MetricsGlobalsTest, TestCase):
@@ -176,7 +201,7 @@ class TestProxy(MetricsGlobalsTest, TestCase):
         self.assertIsInstance(meter2, Mock)
         mock_real_mp.get_meter.assert_called_with(another_name, None, None)
 
-    # pylint: disable=too-many-locals
+    # pylint: disable=too-many-locals,too-many-statements
     def test_proxy_meter(self):
         meter_name = "foo"
         proxy_meter: _ProxyMeter = _ProxyMeterProvider().get_meter(meter_name)
@@ -249,7 +274,7 @@ class TestProxy(MetricsGlobalsTest, TestCase):
             name, unit, description
         )
         real_meter.create_histogram.assert_called_once_with(
-            name, unit, description
+            name, unit, description, explicit_bucket_boundaries_advisory=None
         )
         real_meter.create_gauge.assert_called_once_with(
             name, unit, description
@@ -276,13 +301,15 @@ class TestProxy(MetricsGlobalsTest, TestCase):
         real_gauge.assert_not_called()
 
         proxy_counter.add(amount, attributes=attributes)
-        real_counter.add.assert_called_once_with(amount, attributes)
+        real_counter.add.assert_called_once_with(amount, attributes, None)
         proxy_updowncounter.add(amount, attributes=attributes)
-        real_updowncounter.add.assert_called_once_with(amount, attributes)
+        real_updowncounter.add.assert_called_once_with(
+            amount, attributes, None
+        )
         proxy_histogram.record(amount, attributes=attributes)
-        real_histogram.record.assert_called_once_with(amount, attributes)
+        real_histogram.record.assert_called_once_with(amount, attributes, None)
         proxy_gauge.set(amount, attributes=attributes)
-        real_gauge.set.assert_called_once_with(amount, attributes)
+        real_gauge.set.assert_called_once_with(amount, attributes, None)
 
     def test_proxy_meter_with_real_meter(self) -> None:
         # Creating new instruments on the _ProxyMeter with a real meter set

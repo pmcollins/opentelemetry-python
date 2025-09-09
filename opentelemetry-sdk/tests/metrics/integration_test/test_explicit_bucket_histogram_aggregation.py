@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from platform import system
+from time import sleep
 from unittest import TestCase
 
 from pytest import mark
@@ -26,7 +27,6 @@ from opentelemetry.sdk.metrics.view import ExplicitBucketHistogramAggregation
 
 
 class TestExplicitBucketHistogramAggregation(TestCase):
-
     test_values = [1, 6, 11, 26, 51, 76, 101, 251, 501, 751]
 
     @mark.skipif(
@@ -38,7 +38,6 @@ class TestExplicitBucketHistogramAggregation(TestCase):
         ),
     )
     def test_synchronous_delta_temporality(self):
-
         aggregation = ExplicitBucketHistogramAggregation()
 
         reader = InMemoryMetricReader(
@@ -54,7 +53,6 @@ class TestExplicitBucketHistogramAggregation(TestCase):
         results = []
 
         for _ in range(10):
-
             results.append(reader.get_metrics_data())
 
         for metrics_data in results:
@@ -103,6 +101,7 @@ class TestExplicitBucketHistogramAggregation(TestCase):
             previous_time_unix_nano = metric_data.time_unix_nano
             self.assertEqual(
                 metric_data.bucket_counts,
+                # pylint: disable=consider-using-generator
                 tuple(
                     [
                         1 if internal_index == index + 2 else 0
@@ -120,13 +119,44 @@ class TestExplicitBucketHistogramAggregation(TestCase):
         results = []
 
         for _ in range(10):
-
             results.append(reader.get_metrics_data())
-
-        provider.shutdown()
 
         for metrics_data in results:
             self.assertIsNone(metrics_data)
+
+        results = []
+
+        histogram.record(1)
+        results.append(reader.get_metrics_data())
+
+        sleep(0.1)
+        results.append(reader.get_metrics_data())
+
+        histogram.record(2)
+        results.append(reader.get_metrics_data())
+
+        metric_data_0 = (
+            results[0]
+            .resource_metrics[0]
+            .scope_metrics[0]
+            .metrics[0]
+            .data.data_points[0]
+        )
+        metric_data_2 = (
+            results[2]
+            .resource_metrics[0]
+            .scope_metrics[0]
+            .metrics[0]
+            .data.data_points[0]
+        )
+
+        self.assertIsNone(results[1])
+
+        self.assertGreater(
+            metric_data_2.start_time_unix_nano, metric_data_0.time_unix_nano
+        )
+
+        provider.shutdown()
 
     @mark.skipif(
         system() != "Linux",
@@ -137,7 +167,6 @@ class TestExplicitBucketHistogramAggregation(TestCase):
         ),
     )
     def test_synchronous_cumulative_temporality(self):
-
         aggregation = ExplicitBucketHistogramAggregation()
 
         reader = InMemoryMetricReader(
@@ -155,7 +184,6 @@ class TestExplicitBucketHistogramAggregation(TestCase):
         results = []
 
         for _ in range(10):
-
             results.append(reader.get_metrics_data())
 
         for metrics_data in results:
@@ -164,7 +192,6 @@ class TestExplicitBucketHistogramAggregation(TestCase):
         results = []
 
         for test_value in self.test_values:
-
             histogram.record(test_value)
             results.append(reader.get_metrics_data())
 
@@ -178,7 +205,6 @@ class TestExplicitBucketHistogramAggregation(TestCase):
         )
 
         for index, metrics_data in enumerate(results):
-
             metric_data = (
                 metrics_data.resource_metrics[0]
                 .scope_metrics[0]
@@ -191,11 +217,14 @@ class TestExplicitBucketHistogramAggregation(TestCase):
             )
             self.assertEqual(
                 metric_data.bucket_counts,
+                # pylint: disable=consider-using-generator
                 tuple(
                     [
-                        0
-                        if internal_index < 1 or internal_index > index + 1
-                        else 1
+                        (
+                            0
+                            if internal_index < 1 or internal_index > index + 1
+                            else 1
+                        )
                         for internal_index in range(16)
                     ]
                 ),
@@ -209,7 +238,6 @@ class TestExplicitBucketHistogramAggregation(TestCase):
         results = []
 
         for _ in range(10):
-
             results.append(reader.get_metrics_data())
 
         provider.shutdown()
@@ -224,7 +252,6 @@ class TestExplicitBucketHistogramAggregation(TestCase):
         )
 
         for metrics_data in results:
-
             metric_data = (
                 metrics_data.resource_metrics[0]
                 .scope_metrics[0]

@@ -20,6 +20,9 @@ from typing import Optional, Sequence, Tuple
 from opentelemetry import metrics as metrics_api
 from opentelemetry import trace as trace_api
 from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics._internal.aggregation import (
+    _DEFAULT_EXPLICIT_BUCKET_HISTOGRAM_AGGREGATION_BOUNDARIES,
+)
 from opentelemetry.sdk.metrics._internal.point import Metric
 from opentelemetry.sdk.metrics.export import (
     DataPointT,
@@ -69,10 +72,6 @@ class TestBase(unittest.TestCase):
         return FinishedTestSpans(
             self, self.memory_exporter.get_finished_spans()
         )
-
-    def assertEqualSpanInstrumentationInfo(self, span, module):
-        self.assertEqual(span.instrumentation_info.name, module.__name__)
-        self.assertEqual(span.instrumentation_info.version, module.__version__)
 
     def assertEqualSpanInstrumentationScope(self, span, module):
         self.assertEqual(span.instrumentation_scope.name, module.__name__)
@@ -144,8 +143,9 @@ class TestBase(unittest.TestCase):
             logging.disable(logging.NOTSET)
 
     def get_sorted_metrics(self):
+        metrics_data = self.memory_metrics_reader.get_metrics_data()
         resource_metrics = (
-            self.memory_metrics_reader.get_metrics_data().resource_metrics
+            metrics_data.resource_metrics if metrics_data else []
         )
 
         all_metrics = []
@@ -207,6 +207,12 @@ class TestBase(unittest.TestCase):
             ):
                 return False
 
+            if (
+                expected_data_point.explicit_bounds
+                != data_point.explicit_bounds
+            ):
+                return False
+
         return (
             values_diff <= est_value_delta
             and expected_data_point.attributes == dict(data_point.attributes)
@@ -242,7 +248,12 @@ class TestBase(unittest.TestCase):
 
     @staticmethod
     def create_histogram_data_point(
-        sum_data_point, count, max_data_point, min_data_point, attributes
+        sum_data_point,
+        count,
+        max_data_point,
+        min_data_point,
+        attributes,
+        explicit_bounds=None,
     ):
         return HistogramDataPoint(
             count=count,
@@ -253,7 +264,9 @@ class TestBase(unittest.TestCase):
             start_time_unix_nano=0,
             time_unix_nano=0,
             bucket_counts=[],
-            explicit_bounds=[],
+            explicit_bounds=explicit_bounds
+            if explicit_bounds is not None
+            else _DEFAULT_EXPLICIT_BUCKET_HISTOGRAM_AGGREGATION_BOUNDARIES,
         )
 
 
