@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import asdict
 
 from opentelemetry import trace
 from opentelemetry.configuration._common import (
@@ -112,11 +113,8 @@ def _create_otlp_http_span_exporter(
     """Create an OTLP HTTP span exporter from config."""
     try:
         # pylint: disable=import-outside-toplevel,no-name-in-module
-        from opentelemetry.exporter.otlp.proto.http import (  # type: ignore[import-untyped]  # noqa: PLC0415
-            Compression,
-        )
         from opentelemetry.exporter.otlp.proto.http.trace_exporter import (  # type: ignore[import-untyped]  # noqa: PLC0415
-            OTLPSpanExporter,
+            _create_span_exporter_from_declarative_config,
         )
     except ImportError as exc:
         raise MissingDependencyError(
@@ -124,16 +122,10 @@ def _create_otlp_http_span_exporter(
             feature="otlp_http span exporter",
         ) from exc
 
-    compression = _map_compression(config.compression, Compression, allow_deflate=True)
-    headers = _parse_headers(config.headers, config.headers_list)
-    timeout = (config.timeout / 1000.0) if config.timeout is not None else None
-
-    return OTLPSpanExporter(  # type: ignore[return-value]
-        endpoint=config.endpoint,
-        headers=headers,
-        timeout=timeout,
-        compression=compression,  # type: ignore[arg-type]
-    )
+    try:
+        return _create_span_exporter_from_declarative_config(asdict(config))
+    except (TypeError, ValueError) as exc:
+        raise ConfigurationError(f"Invalid otlp_http span exporter configuration: {exc}") from exc
 
 
 def _create_otlp_grpc_span_exporter(

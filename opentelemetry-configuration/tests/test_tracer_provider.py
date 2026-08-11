@@ -544,7 +544,6 @@ class TestCreateSpanExporterAndProcessor(unittest.TestCase):
             sys.modules,
             {
                 "opentelemetry.exporter.otlp.proto.http.trace_exporter": None,
-                "opentelemetry.exporter.otlp.proto.http": None,
             },
         ):
             with self.assertRaises(ConfigurationError) as ctx:
@@ -552,19 +551,14 @@ class TestCreateSpanExporterAndProcessor(unittest.TestCase):
         self.assertIn("otlp-proto-http", str(ctx.exception))
 
     def test_otlp_http_created_with_endpoint(self):
-        mock_exporter_cls = MagicMock()
-        mock_compression_cls = MagicMock()
-        mock_compression_cls.Gzip = "gzip_val"
+        mock_create_from_declarative_config = MagicMock()
         mock_module = MagicMock()
-        mock_module.OTLPSpanExporter = mock_exporter_cls
-        mock_http_module = MagicMock()
-        mock_http_module.Compression = mock_compression_cls
+        mock_module._create_span_exporter_from_declarative_config = mock_create_from_declarative_config
 
         with patch.dict(
             sys.modules,
             {
                 "opentelemetry.exporter.otlp.proto.http.trace_exporter": mock_module,
-                "opentelemetry.exporter.otlp.proto.http": mock_http_module,
             },
         ):
             config = self._make_batch_config(
@@ -572,27 +566,22 @@ class TestCreateSpanExporterAndProcessor(unittest.TestCase):
             )
             create_tracer_provider(config)
 
-        mock_exporter_cls.assert_called_once_with(
-            endpoint="http://localhost:4318",
-            headers=None,
-            timeout=None,
-            compression=None,
-        )
+        mock_create_from_declarative_config.assert_called_once()
+        exporter_config = mock_create_from_declarative_config.call_args.args[0]
+        self.assertEqual(exporter_config["endpoint"], "http://localhost:4318")
+        self.assertIsNone(exporter_config["headers"])
+        self.assertIsNone(exporter_config["timeout"])
+        self.assertIsNone(exporter_config["compression"])
 
     def test_otlp_http_created_with_deflate_compression(self):
-        mock_exporter_cls = MagicMock()
-        mock_compression_cls = MagicMock()
-        mock_compression_cls.Deflate = "deflate_val"
+        mock_create_from_declarative_config = MagicMock()
         mock_module = MagicMock()
-        mock_module.OTLPSpanExporter = mock_exporter_cls
-        mock_http_module = MagicMock()
-        mock_http_module.Compression = mock_compression_cls
+        mock_module._create_span_exporter_from_declarative_config = mock_create_from_declarative_config
 
         with patch.dict(
             sys.modules,
             {
                 "opentelemetry.exporter.otlp.proto.http.trace_exporter": mock_module,
-                "opentelemetry.exporter.otlp.proto.http": mock_http_module,
             },
         ):
             config = self._make_batch_config(
@@ -600,20 +589,18 @@ class TestCreateSpanExporterAndProcessor(unittest.TestCase):
             )
             create_tracer_provider(config)
 
-        _, kwargs = mock_exporter_cls.call_args
-        self.assertEqual(kwargs["compression"], "deflate_val")
+        exporter_config = mock_create_from_declarative_config.call_args.args[0]
+        self.assertEqual(exporter_config["compression"], "deflate")
 
     def test_otlp_http_headers_list(self):
-        mock_exporter_cls = MagicMock()
-        mock_http_module = MagicMock()
+        mock_create_from_declarative_config = MagicMock()
         mock_module = MagicMock()
-        mock_module.OTLPSpanExporter = mock_exporter_cls
+        mock_module._create_span_exporter_from_declarative_config = mock_create_from_declarative_config
 
         with patch.dict(
             sys.modules,
             {
                 "opentelemetry.exporter.otlp.proto.http.trace_exporter": mock_module,
-                "opentelemetry.exporter.otlp.proto.http": mock_http_module,
             },
         ):
             config = self._make_batch_config(
@@ -621,8 +608,11 @@ class TestCreateSpanExporterAndProcessor(unittest.TestCase):
             )
             create_tracer_provider(config)
 
-        _, kwargs = mock_exporter_cls.call_args
-        self.assertEqual(kwargs["headers"], {"x-api-key": "secret", "env": "prod"})
+        exporter_config = mock_create_from_declarative_config.call_args.args[0]
+        self.assertEqual(
+            exporter_config["headers_list"],
+            "x-api-key=secret,env=prod",
+        )
 
     def test_otlp_file_development_missing_package_raises(self):
         config = self._make_batch_config(SpanExporterConfig(otlp_file_development=ExperimentalOtlpFileExporterConfig()))

@@ -14,6 +14,9 @@ from requests import Session
 from requests.exceptions import ConnectionError
 from requests.models import Response
 
+from opentelemetry.exporter.otlp.proto.common._exporter_metrics import (
+    NoOpExporterMetrics,
+)
 from opentelemetry.exporter.otlp.proto.common.trace_encoder import (
     encode_spans,
 )
@@ -24,6 +27,7 @@ from opentelemetry.exporter.otlp.proto.http.trace_exporter import (
     DEFAULT_TIMEOUT,
     DEFAULT_TRACES_EXPORT_PATH,
     OTLPSpanExporter,
+    _create_span_exporter_from_declarative_config,
 )
 from opentelemetry.exporter.otlp.proto.http.version import __version__
 from opentelemetry.sdk.environment_variables import (
@@ -207,6 +211,69 @@ class TestOTLPSpanExporter(unittest.TestCase):
             {"testHeader1": "value1", "testHeader2": "value2"},
         )
         self.assertIsInstance(exporter._session, requests.Session)
+
+    @patch.dict(
+        "os.environ",
+        {
+            OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: "https://ambient.example/v1/traces",
+            OTEL_EXPORTER_OTLP_TRACES_HEADERS: "ambient=header",
+            OTEL_EXPORTER_OTLP_TRACES_TIMEOUT: "99",
+            OTEL_EXPORTER_OTLP_TRACES_COMPRESSION: "gzip",
+            OTEL_PYTHON_SDK_INTERNAL_METRICS_ENABLED: "true",
+        },
+        clear=True,
+    )
+    def test_declarative_configuration_ignores_ambient_environment(self):
+        exporter = _create_span_exporter_from_declarative_config({})
+
+        self.assertEqual(
+            exporter._endpoint,
+            DEFAULT_ENDPOINT + DEFAULT_TRACES_EXPORT_PATH,
+        )
+        self.assertEqual(exporter._headers, {})
+        self.assertEqual(exporter._timeout, DEFAULT_TIMEOUT)
+        self.assertIs(exporter._compression, DEFAULT_COMPRESSION)
+        self.assertIsInstance(exporter._metrics, NoOpExporterMetrics)
+
+    def test_declarative_configuration_maps_explicit_values(self):
+        exporter = _create_span_exporter_from_declarative_config(
+            {
+                "endpoint": "https://collector.example/v1/traces",
+                "tls": {
+                    "ca_file": "/certs/ca.pem",
+                    "key_file": "/certs/client-key.pem",
+                    "cert_file": "/certs/client-cert.pem",
+                },
+                "headers_list": "from-list=first,overridden=old",
+                "headers": [
+                    {"name": "overridden", "value": "new"},
+                    {"name": "ignored", "value": None},
+                ],
+                "compression": "deflate",
+                "timeout": 2500,
+            }
+        )
+
+        self.assertEqual(
+            exporter._endpoint,
+            "https://collector.example/v1/traces",
+        )
+        self.assertEqual(exporter._certificate_file, "/certs/ca.pem")
+        self.assertEqual(exporter._client_key_file, "/certs/client-key.pem")
+        self.assertEqual(
+            exporter._client_certificate_file,
+            "/certs/client-cert.pem",
+        )
+        self.assertEqual(
+            exporter._headers,
+            {
+                "from-list": "first",
+                "overridden": "new",
+                "ignored": "",
+            },
+        )
+        self.assertEqual(exporter._timeout, 2.5)
+        self.assertIs(exporter._compression, Compression.Deflate)
 
     @patch.dict(
         "os.environ",
